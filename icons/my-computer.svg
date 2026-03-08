@@ -1,0 +1,35 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Monitor body -->
+  <rect x="4" y="3" width="24" height="18" fill="#c0c0c0"/>
+  <rect x="4" y="3" width="24" height="1" fill="#fff"/>
+  <rect x="4" y="3" width="1" height="18" fill="#fff"/>
+  <rect x="27" y="3" width="1" height="18" fill="#808080"/>
+  <rect x="4" y="20" width="24" height="1" fill="#808080"/>
+  <!-- Screen bezel -->
+  <rect x="6" y="5" width="20" height="13" fill="#000080"/>
+  <rect x="7" y="6" width="18" height="11" fill="#0000aa"/>
+  <!-- Screen content - small window -->
+  <rect x="9" y="7" width="10" height="8" fill="#c0c0c0"/>
+  <rect x="9" y="7" width="10" height="2" fill="#000080"/>
+  <rect x="10" y="7" width="8" height="1" fill="#fff" opacity="0.3"/>
+  <!-- Monitor base -->
+  <rect x="10" y="21" width="12" height="2" fill="#c0c0c0"/>
+  <rect x="10" y="21" width="12" height="1" fill="#fff"/>
+  <rect x="8" y="23" width="16" height="2" fill="#c0c0c0"/>
+  <rect x="8" y="23" width="16" height="1" fill="#fff"/>
+  <rect x="8" y="24" width="16" height="1" fill="#808080"/>
+  <!-- Power LED -->
+  <rect x="14" y="18" width="2" height="1" fill="#00aa00"/>
+  <!-- Keyboard hint -->
+  <rect x="3" y="26" width="26" height="3" fill="#c0c0c0"/>
+  <rect x="3" y="26" width="26" height="1" fill="#fff"/>
+  <rect x="28" y="26" width="1" height="3" fill="#808080"/>
+  <rect x="3" y="28" width="26" height="1" fill="#808080"/>
+  <rect x="5" y="27" width="2" height="1" fill="#808080"/>
+  <rect x="8" y="27" width="2" height="1" fill="#808080"/>
+  <rect x="11" y="27" width="2" height="1" fill="#808080"/>
+  <rect x="14" y="27" width="4" height="1" fill="#808080"/>
+  <rect x="19" y="27" width="2" height="1" fill="#808080"/>
+  <rect x="22" y="27" width="2" height="1" fill="#808080"/>
+  <rect x="25" y="27" width="2" height="1" fill="#808080"/>
+</svg>

@@ -1,0 +1,63 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Emoji98</title>
+  <link rel="stylesheet" href="https://unpkg.com/98.css" />
+  <link rel="stylesheet" href="style.css" />
+</head>
+<body>
+  <div id="desktop">
+    <div class="desktop-icon" data-app="my-computer" tabindex="0">
+      <img src="icons/my-computer.svg" alt="My Computer" draggable="false" />
+      <span>My Computer</span>
+    </div>
+    <div class="desktop-icon" data-app="recycle-bin" tabindex="0">
+      <img src="icons/recycle-bin.svg" alt="Recycle Bin" draggable="false" />
+      <span>Recycle Bin</span>
+    </div>
+    <div class="desktop-icon" data-app="emoji-game" tabindex="0">
+      <img src="icons/emoji-game.svg" alt="Emoji Game" draggable="false" />
+      <span>Emoji Game</span>
+    </div>
+  </div>
+
+  <div id="windows-container"></div>
+
+  <div id="start-menu" class="window" hidden>
+    <div class="start-menu-sidebar">98</div>
+    <div class="start-menu-content">
+      <ul id="start-menu-list">
+        <li data-app="emoji-game">
+          <img src="icons/emoji-game.svg" alt="" />
+          Emoji Game
+        </li>
+        <li data-app="my-computer">
+          <img src="icons/my-computer.svg" alt="" />
+          My Computer
+        </li>
+        <li class="separator"></li>
+        <li id="start-shutdown">
+          <img src="icons/shutdown.svg" alt="" />
+          Shut Down...
+        </li>
+      </ul>
+    </div>
+  </div>
+
+  <div id="taskbar">
+    <button id="start-button">
+      <img src="icons/start.svg" alt="" />
+      <strong>Start</strong>
+    </button>
+    <div id="taskbar-divider"></div>
+    <div id="taskbar-buttons"></div>
+    <div id="system-tray">
+      <span id="clock"></span>
+    </div>
+  </div>
+
+  <script src="script.js"></script>
+</body>
+</html>

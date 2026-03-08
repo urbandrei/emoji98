@@ -1,0 +1,17 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 16 16" shape-rendering="crispEdges">
+  <!-- Windows 98 flag logo - 4 color squares -->
+  <!-- Red -->
+  <rect x="1" y="1" width="6" height="6" fill="#ff0000"/>
+  <rect x="2" y="2" width="4" height="4" fill="#ff0000"/>
+  <!-- Waving effect on red -->
+  <rect x="1" y="1" width="3" height="3" fill="#ff4444"/>
+  <!-- Green -->
+  <rect x="9" y="1" width="6" height="6" fill="#00aa00"/>
+  <rect x="12" y="1" width="3" height="3" fill="#00cc00"/>
+  <!-- Blue -->
+  <rect x="1" y="9" width="6" height="6" fill="#0000ff"/>
+  <rect x="1" y="9" width="3" height="3" fill="#4444ff"/>
+  <!-- Yellow -->
+  <rect x="9" y="9" width="6" height="6" fill="#ffcc00"/>
+  <rect x="12" y="9" width="3" height="3" fill="#ffdd44"/>
+</svg>
