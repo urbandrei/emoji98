@@ -1,0 +1,27 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 32 32" shape-rendering="crispEdges">
+  <!-- Awning -->
+  <rect x="2" y="4" width="28" height="6" fill="#cc3333"/>
+  <rect x="2" y="4" width="4" height="6" fill="#ff5555"/>
+  <rect x="10" y="4" width="4" height="6" fill="#ff5555"/>
+  <rect x="18" y="4" width="4" height="6" fill="#ff5555"/>
+  <rect x="26" y="4" width="4" height="6" fill="#ff5555"/>
+  <!-- Building -->
+  <rect x="4" y="10" width="24" height="18" fill="#f5deb3"/>
+  <rect x="4" y="10" width="24" height="2" fill="#d4a574"/>
+  <!-- Window -->
+  <rect x="7" y="14" width="8" height="6" fill="#87ceeb"/>
+  <rect x="7" y="14" width="8" height="1" fill="#654321"/>
+  <rect x="7" y="14" width="1" height="6" fill="#654321"/>
+  <rect x="14" y="14" width="1" height="6" fill="#654321"/>
+  <rect x="11" y="14" width="1" height="6" fill="#654321"/>
+  <!-- Door -->
+  <rect x="18" y="16" width="7" height="12" fill="#8b4513"/>
+  <rect x="23" y="21" width="1" height="2" fill="#ffd700"/>
+  <!-- Sign -->
+  <rect x="8" y="1" width="16" height="3" fill="#ffd700"/>
+  <rect x="9" y="2" width="2" height="1" fill="#333"/>
+  <rect x="12" y="2" width="2" height="1" fill="#333"/>
+  <rect x="15" y="2" width="2" height="1" fill="#333"/>
+  <rect x="18" y="2" width="2" height="1" fill="#333"/>
+  <rect x="21" y="2" width="2" height="1" fill="#333"/>
+</svg>
