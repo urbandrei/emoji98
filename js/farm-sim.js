@@ -5,10 +5,14 @@ import { inventory, addInventory, onInventoryChange, offInventoryChange } from "
 import { createWindow } from "./index.js";
 import { debounce } from "./index.js";
 import { playPlant, playWater, playHarvest, playClick } from "./sounds.js";
+import { playTractorTick } from "./sounds.js";
 import { getUpgradeLevel, getPrestigeMultiplier } from "./upgrades.js";
-import { isWindowActive, isWindowMinimized } from "./window-manager.js";
+
 
 let farmGame = null;
+
+// Base auto-tick: slowly plants and waters random tiles (no harvesting)
+const BASE_AUTO_DELAY = 15000;
 
 function calcFarmDimensions(grid) {
   const w = grid.clientWidth;
@@ -29,6 +33,19 @@ function createFarmTile() {
   tile.dataset.state = "empty";
   tile.addEventListener("click", () => farmTileClick(tile));
   return tile;
+}
+
+// Build zig-zag traversal order (tile indices)
+function buildZigzagOrder(cols, rows) {
+  const order = [];
+  for (let r = 0; r < rows; r++) {
+    if (r % 2 === 0) {
+      for (let c = 0; c < cols; c++) order.push(r * cols + c);
+    } else {
+      for (let c = cols - 1; c >= 0; c--) order.push(r * cols + c);
+    }
+  }
+  return order;
 }
 
 function rebuildFarmGrid() {
@@ -55,6 +72,13 @@ function rebuildFarmGrid() {
 
   farmGame.cols = cols;
   farmGame.rows = rows;
+  farmGame.zigzagOrder = buildZigzagOrder(cols, rows);
+
+  // Reposition tractors and clamp their indices
+  for (const tractor of farmGame.tractors) {
+    tractor.zigzagIdx = tractor.zigzagIdx % farmGame.zigzagOrder.length;
+    tractor.progress = 0;
+  }
 }
 
 async function advanceTile(tile, action) {
@@ -74,21 +98,16 @@ async function advanceTile(tile, action) {
         const grownSrc = await pixelateEmoji("1f33e");
         tile.innerHTML = `<img src="${grownSrc}" />`;
       }
-    }, 3000);
+    }, 8000);
   } else if (action === "harvest" && tile.dataset.state === "grown") {
     tile.dataset.state = "empty";
     tile.innerHTML = "";
-    // Golden Harvest: chance for 2x food
     const goldenLevel = getUpgradeLevel("golden_harvest");
     const goldenChance = [0, 0.2, 0.35, 0.5][goldenLevel];
     let amount = 1;
     if (Math.random() < goldenChance) amount = 2;
     addInventory("food", amount * getPrestigeMultiplier());
     playHarvest();
-    // Auto-Plant: instantly replant after harvest
-    if (getUpgradeLevel("auto_plant") >= 1) {
-      advanceTile(tile, "plant");
-    }
   }
 }
 
@@ -101,44 +120,178 @@ function pickRandom(arr) {
   return arr[Math.floor(Math.random() * arr.length)];
 }
 
-function getAutoTickDelay() {
-  return [8000, 5000, 3000, 1500][getUpgradeLevel("farm_speed")];
-}
-
+// Base auto-tick: only plants and waters randomly (no harvesting)
 async function autoTick() {
   if (!farmGame) return;
 
-  // Pause logic
-  const minimized = isWindowMinimized("farm-sim");
-  const active = isWindowActive("farm-sim");
-  const shouldPause = minimized
-    ? getUpgradeLevel("active_minimized") < 1
-    : (!active && getUpgradeLevel("active_deselected") < 1);
-  if (shouldPause) {
-    farmGame.autoTimeout = setTimeout(autoTick, 500);
-    return;
-  }
-
   const tiles = farmGame.tiles;
-
-  const grown = tiles.filter((t) => t.dataset.state === "grown");
-  if (grown.length) { advanceTile(pickRandom(grown), "harvest"); }
-  else {
-    const planted = tiles.filter((t) => t.dataset.state === "planted");
-    if (planted.length) { advanceTile(pickRandom(planted), "water"); }
-    else {
-      const empty = tiles.filter((t) => t.dataset.state === "empty");
-      if (empty.length) { advanceTile(pickRandom(empty), "plant"); }
+  const planted = tiles.filter((t) => t.dataset.state === "planted");
+  if (planted.length) {
+    advanceTile(pickRandom(planted), "water");
+  } else {
+    const empty = tiles.filter((t) => t.dataset.state === "empty");
+    if (empty.length) {
+      advanceTile(pickRandom(empty), "plant");
     }
   }
 
-  // Recursive setTimeout so delay re-reads upgrade level each tick
-  farmGame.autoTimeout = setTimeout(autoTick, getAutoTickDelay());
+  farmGame.autoTimeout = setTimeout(autoTick, BASE_AUTO_DELAY);
+}
+
+// ========== Tractor System ==========
+
+function getTractorCount() {
+  const level = getUpgradeLevel("tractor_speed");
+  return [1, 1, 2, 3][level];
+}
+
+function getTractorTickDelay() {
+  const level = getUpgradeLevel("tractor_speed");
+  return [2000, 1200, 700, 400][level];
+}
+
+function getTractorCapability() {
+  // Level 0 = no tractor, 1 = plant, 2 = plant+water, 3 = plant+water+harvest
+  return getUpgradeLevel("tractor");
+}
+
+async function createTractorElement() {
+  const el = document.createElement("img");
+  el.className = "farm-tractor";
+  const src = await pixelateEmoji("1f69c");
+  el.src = src;
+  return el;
+}
+
+function getTileCenter(tileIdx) {
+  if (!farmGame || tileIdx < 0 || tileIdx >= farmGame.tiles.length) return null;
+  const tile = farmGame.tiles[tileIdx];
+  const gridRect = farmGame.grid.getBoundingClientRect();
+  const tileRect = tile.getBoundingClientRect();
+  return {
+    x: tileRect.left - gridRect.left + tileRect.width / 2 - 12,
+    y: tileRect.top - gridRect.top + tileRect.height / 2 - 12,
+  };
+}
+
+function tractorAction(tileIdx) {
+  if (!farmGame || tileIdx < 0 || tileIdx >= farmGame.tiles.length) return;
+  const tile = farmGame.tiles[tileIdx];
+  const cap = getTractorCapability();
+  const state = tile.dataset.state;
+
+  if (state === "empty" && cap >= 1) {
+    advanceTile(tile, "plant");
+  } else if (state === "planted" && cap >= 2) {
+    advanceTile(tile, "water");
+  } else if (state === "grown" && cap >= 3) {
+    advanceTile(tile, "harvest");
+  }
+}
+
+function positionTractor(tractor) {
+  if (!farmGame) return;
+  const order = farmGame.zigzagOrder;
+  if (!order.length) return;
+
+  const currentIdx = order[tractor.zigzagIdx % order.length];
+  const nextZigzag = (tractor.zigzagIdx + 1) % order.length;
+  const nextIdx = order[nextZigzag];
+
+  const from = getTileCenter(currentIdx);
+  const to = getTileCenter(nextIdx);
+  if (!from || !to) return;
+
+  const p = tractor.progress;
+  const x = from.x + (to.x - from.x) * p;
+  const y = from.y + (to.y - from.y) * p;
+  tractor.el.style.left = x + "px";
+  tractor.el.style.top = y + "px";
+
+  // Tractor emoji faces left by default; flip when moving right
+  const dx = to.x - from.x;
+  if (dx > 0) {
+    tractor.el.style.transform = "scaleX(-1)";
+  } else if (dx < 0) {
+    tractor.el.style.transform = "scaleX(1)";
+  }
+}
+
+function clearTractorHighlights() {
+  if (!farmGame) return;
+  for (const tile of farmGame.tiles) {
+    tile.classList.remove("tractor-active");
+  }
+}
+
+function highlightTractorTile(tileIdx) {
+  if (!farmGame || tileIdx < 0 || tileIdx >= farmGame.tiles.length) return;
+  farmGame.tiles[tileIdx].classList.add("tractor-active");
+}
+
+function tractorLoop(timestamp) {
+  if (!farmGame) return;
+
+  const elapsed = farmGame.prevTractorTimestamp ? timestamp - farmGame.prevTractorTimestamp : 0;
+  farmGame.prevTractorTimestamp = timestamp;
+
+  if (getTractorCapability() <= 0) {
+    farmGame.tractorAnimId = requestAnimationFrame(tractorLoop);
+    return;
+  }
+
+  const tickDelay = getTractorTickDelay();
+  const progressPerMs = 1 / tickDelay;
+
+  // Ensure correct number of tractors
+  const desiredCount = getTractorCount();
+  while (farmGame.tractors.length < desiredCount) {
+    // Space new tractors evenly across the zigzag
+    const totalTiles = farmGame.zigzagOrder.length;
+    const spacing = Math.floor(totalTiles / desiredCount);
+    const idx = farmGame.tractors.length;
+    const startIdx = (idx * spacing) % totalTiles;
+    const tractor = { el: null, zigzagIdx: startIdx, progress: 0, pendingEl: true };
+    farmGame.tractors.push(tractor);
+    createTractorElement().then((el) => {
+      if (!farmGame) return;
+      tractor.el = el;
+      tractor.pendingEl = false;
+      farmGame.grid.appendChild(el);
+    });
+  }
+
+  clearTractorHighlights();
+
+  for (const tractor of farmGame.tractors) {
+    if (!tractor.el || tractor.pendingEl) continue;
+
+    tractor.progress += progressPerMs * elapsed;
+
+    if (tractor.progress >= 1) {
+      tractor.progress = 0;
+      tractor.zigzagIdx = (tractor.zigzagIdx + 1) % farmGame.zigzagOrder.length;
+
+      // Perform action on new tile
+      const tileIdx = farmGame.zigzagOrder[tractor.zigzagIdx];
+      tractorAction(tileIdx);
+      playTractorTick();
+    }
+
+    // Highlight current tile
+    const currentTileIdx = farmGame.zigzagOrder[tractor.zigzagIdx % farmGame.zigzagOrder.length];
+    highlightTractorTile(currentTileIdx);
+
+    positionTractor(tractor);
+  }
+
+  farmGame.tractorAnimId = requestAnimationFrame(tractorLoop);
 }
 
 function stopFarmSim() {
   if (!farmGame) return;
   if (farmGame.autoTimeout) clearTimeout(farmGame.autoTimeout);
+  if (farmGame.tractorAnimId) cancelAnimationFrame(farmGame.tractorAnimId);
   offInventoryChange(farmGame.inventoryListener);
   farmGame = null;
 }
@@ -184,12 +337,33 @@ export function launchFarmSim() {
   statusBar.innerHTML = `<p class="status-bar-field">Food supply: ${inventory.food}</p>`;
   entry.element.appendChild(statusBar);
 
-  farmGame = { grid, tiles: [], tool: "plant", statusBar, cols: 0, rows: 0, autoTimeout: null };
+  farmGame = {
+    grid,
+    tiles: [],
+    tool: "plant",
+    statusBar,
+    cols: 0,
+    rows: 0,
+    autoTimeout: null,
+    tractors: [],
+    tractorAnimId: null,
+    prevTractorTimestamp: 0,
+    zigzagOrder: [],
+  };
 
   rebuildFarmGrid();
-  entry.onResize = debounce(rebuildFarmGrid, 150);
+  entry.onResize = debounce(() => {
+    rebuildFarmGrid();
+    // Reposition tractors immediately after grid rebuild
+    for (const tractor of farmGame.tractors) {
+      if (tractor.el) positionTractor(tractor);
+    }
+  }, 150);
 
-  farmGame.autoTimeout = setTimeout(autoTick, getAutoTickDelay());
+  farmGame.autoTimeout = setTimeout(autoTick, BASE_AUTO_DELAY);
+
+  // Start tractor animation loop
+  farmGame.tractorAnimId = requestAnimationFrame(tractorLoop);
 
   farmGame.inventoryListener = () => {
     statusBar.querySelector(".status-bar-field").textContent = `Food supply: ${inventory.food}`;

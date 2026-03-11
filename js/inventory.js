@@ -2,7 +2,7 @@
 
 const inventoryTarget = new EventTarget();
 
-export const inventory = { food: 3, water: 3, play: 3 };
+export const inventory = { food: 3, water: 3, play: 3, coin: 0 };
 
 let _saveCallback = null;
 
@@ -13,6 +13,18 @@ export function setSaveCallback(fn) {
 function notifyInventory() {
   inventoryTarget.dispatchEvent(new CustomEvent("change", { detail: { ...inventory } }));
   if (_saveCallback) _saveCallback();
+}
+
+export function addCoin(amount) {
+  inventory.coin += amount;
+  notifyInventory();
+}
+
+export function spendCoin(amount) {
+  if (inventory.coin < amount) return false;
+  inventory.coin -= amount;
+  notifyInventory();
+  return true;
 }
 
 export function addInventory(type, amount) {
@@ -48,6 +60,9 @@ function notifyRecycleBin() {
 
 export function addToRecycleBin(entry) {
   recycleBin.push(entry);
+  if (entry.coinValue) {
+    addCoin(entry.coinValue);
+  }
   notifyRecycleBin();
 }
 

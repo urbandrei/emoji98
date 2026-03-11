@@ -6,7 +6,7 @@ import { createWindow } from "./index.js";
 import { debounce } from "./index.js";
 import { playFactoryMatch, playFactoryMiss, playClick } from "./sounds.js";
 import { getUpgradeLevel, getPrestigeMultiplier } from "./upgrades.js";
-import { isWindowActive, isWindowMinimized } from "./window-manager.js";
+
 
 const TOY_TYPES = [
   { name: "soccer", label: "Soccer Ball", codepoint: "26bd" },
@@ -16,7 +16,7 @@ const TOY_TYPES = [
 
 const MISS_CODEPOINT = "274c";  // cross mark
 const CHECK_CODEPOINT = "2705"; // check mark
-const BASE_SPAWN_INTERVAL = 12000;
+const BASE_SPAWN_INTERVAL = 25000;
 const MIN_RATE = 0.1;
 const DECAY_SPEED = 0.02;
 const RESTORE_SPEED = 0.08;
@@ -177,23 +177,13 @@ function updateSelectorButtons() {
 function factoryLoop(timestamp) {
   if (!factoryGame) return;
 
-  // Pause logic
-  const minimized = isWindowMinimized("toy-factory");
-  const active = isWindowActive("toy-factory");
-  const shouldPause = minimized
-    ? getUpgradeLevel("active_minimized") < 1
-    : (!active && getUpgradeLevel("active_deselected") < 1);
-  if (shouldPause) {
-    factoryGame.prevTimestamp = 0;
-    factoryGame.animationId = requestAnimationFrame(factoryLoop);
-    return;
-  }
+
 
   const elapsed = factoryGame.prevTimestamp ? timestamp - factoryGame.prevTimestamp : 16.667;
   factoryGame.prevTimestamp = timestamp;
   const elapsedSec = elapsed / 1000;
 
-  const speed = [0.8, 1.2, 1.8, 2.5][getUpgradeLevel("belt_speed")];
+  const speed = [0.4, 0.7, 1.2, 2.0][getUpgradeLevel("belt_speed")];
 
   for (const col of factoryGame.columns) {
     updateSpawnRates(col, elapsedSec);

@@ -1,11 +1,14 @@
 // ========== Emoji Pet Game ==========
 
-import { pixelateEmoji } from "./index.js";
+import { getSpriteImage } from "./index.js";
 import { inventory, useInventory, onInventoryChange, offInventoryChange, addToRecycleBin } from "./index.js";
 import { playFeed, playPetDeath, playPoopSplat, playHeart, playBirth, playClick, playLand } from "./sounds.js";
-import { createWindow, isWindowActive, isWindowMinimized } from "./index.js";
+import { createWindow } from "./index.js";
 import { debounce } from "./index.js";
 import { getUpgradeLevel, registerPetAccessor, onUpgradeChange, offUpgradeChange, getDispenseSpeed, setDispenseSpeed, DISPENSE_INTERVALS, DISPENSE_LABELS } from "./upgrades.js";
+import { SpatialGrid } from "./spatial-grid.js";
+import { notifyTutorialEvent } from "./tutorial.js";
+import { toLayoutX, toLayoutY } from "./scaling.js";
 
 const FIRST_NAMES = [
   "Aanya","Abel","Ada","Adaeze","Aditi","Adriana","Aiko","Aisha","Akari","Akira",
@@ -77,6 +80,7 @@ const POOP_PER_PET_CHANCE = 0.3;
 const SICK_THRESHOLD = 15000;
 const DEATH_THRESHOLD = 75000;
 const POOP_PROXIMITY = 40;
+const MAX_POOPS = 200;
 
 const ITEMS = {
   food:  { codepoint: "1f354", label: "Feed" },
@@ -88,40 +92,573 @@ const ITEM_TYPES = ["food", "water", "play"];
 const PET_SIZE = 20;
 const ITEM_SIZE = 20;
 
+// Coin value helpers
+function getPoopCoinValue() { return [1, 2, 3, 5][getUpgradeLevel("poop_coin")]; }
+function getSkullCoinValue() { return [2, 4, 6, 10][getUpgradeLevel("skull_coin")]; }
+function getPetCoinValue() { return 5; }
+function getRoombaCoinMult() { return [1, 1.5, 2, 3][getUpgradeLevel("roomba_coin")]; }
+
 let petGame = null;
 
-function createPet(area, x, y) {
-  const petEl = document.createElement("img");
-  petEl.className = "pet-sprite";
-  petEl.draggable = false;
-  area.appendChild(petEl);
+// ========== Canvas Drawing Helpers ==========
 
-  const bubble = document.createElement("div");
-  bubble.className = "pet-bubble";
-  bubble.style.display = "none";
-  const bubbleImg = document.createElement("img");
-  bubbleImg.draggable = false;
-  bubble.appendChild(bubbleImg);
-  area.appendChild(bubble);
+function drawSprite(ctx, codepoint, x, y, size) {
+  const img = getSpriteImage(codepoint);
+  if (img) ctx.drawImage(img, x, y, size, size);
+}
 
-  const heartBubble = document.createElement("div");
-  heartBubble.className = "pet-heart-bubble";
-  area.appendChild(heartBubble);
+function drawFlippedSprite(ctx, codepoint, x, y, size, scaleX) {
+  const img = getSpriteImage(codepoint);
+  if (!img) return;
+  if (scaleX === -1) {
+    ctx.save();
+    ctx.translate(x + size, y);
+    ctx.scale(-1, 1);
+    ctx.drawImage(img, 0, 0, size, size);
+    ctx.restore();
+  } else {
+    ctx.drawImage(img, x, y, size, size);
+  }
+}
 
-  pixelateEmoji("2764").then((src) => {
-    const heartImg = document.createElement("img");
-    heartImg.src = src;
-    heartImg.draggable = false;
-    heartBubble.appendChild(heartImg);
+function drawBubble(ctx, pet, iconCodepoint, isHeart) {
+  const bx = isHeart ? pet.x + PET_SIZE / 2 - 10 : pet.x - 1;
+  const by = isHeart ? pet.y - 24 : pet.y - 26;
+  const bw = isHeart ? 18 : 22;
+  const bh = isHeart ? 18 : 22;
+  const r = 4;
+
+  // White rounded rect with black border
+  ctx.fillStyle = "#fff";
+  ctx.strokeStyle = "#000";
+  ctx.lineWidth = 2;
+  ctx.beginPath();
+  ctx.moveTo(bx + r, by);
+  ctx.lineTo(bx + bw - r, by);
+  ctx.arcTo(bx + bw, by, bx + bw, by + r, r);
+  ctx.lineTo(bx + bw, by + bh - r);
+  ctx.arcTo(bx + bw, by + bh, bx + bw - r, by + bh, r);
+  ctx.lineTo(bx + r, by + bh);
+  ctx.arcTo(bx, by + bh, bx, by + bh - r, r);
+  ctx.lineTo(bx, by + r);
+  ctx.arcTo(bx, by, bx + r, by, r);
+  ctx.closePath();
+  ctx.fill();
+  ctx.stroke();
+
+  // Triangle pointer
+  const triX = bx + bw / 2;
+  const triY = by + bh;
+  ctx.fillStyle = "#000";
+  ctx.beginPath();
+  ctx.moveTo(triX - 5, triY);
+  ctx.lineTo(triX + 5, triY);
+  ctx.lineTo(triX, triY + 6);
+  ctx.closePath();
+  ctx.fill();
+
+  // Icon inside
+  const iconSize = isHeart ? 12 : 14;
+  const iconX = bx + (bw - iconSize) / 2;
+  const iconY = by + (bh - iconSize) / 2;
+  drawSprite(ctx, iconCodepoint, iconX, iconY, iconSize);
+}
+
+function drawLifted(ctx, codepoint, x, y, size, scaleX) {
+  // Shadow
+  ctx.fillStyle = "rgba(0,0,0,0.25)";
+  ctx.beginPath();
+  ctx.ellipse(x + size / 2 + 2, y + size + 2, size / 2, size / 5, 0, 0, Math.PI * 2);
+  ctx.fill();
+  // Draw lifted (shifted up)
+  if (scaleX !== undefined) {
+    drawFlippedSprite(ctx, codepoint, x, y - 4, size, scaleX);
+  } else {
+    drawSprite(ctx, codepoint, x, y - 4, size);
+  }
+}
+
+function renderPetGame(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#4a8f29";
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw poops
+  for (const poop of petGame.poops) {
+    if (poop.dragging) continue;
+    if (poop.hovered) {
+      drawLifted(ctx, POOP_CODEPOINT, poop.x, poop.y, 20);
+    } else {
+      drawSprite(ctx, POOP_CODEPOINT, poop.x, poop.y, 20);
+    }
+  }
+
+  // Draw items (with fade opacity)
+  for (const item of petGame.items) {
+    if (item.consumed) continue;
+    if (item.opacity < 1) ctx.globalAlpha = item.opacity;
+    drawSprite(ctx, ITEMS[item.type].codepoint, item.x, item.y, 20);
+    if (item.opacity < 1) ctx.globalAlpha = 1;
+  }
+
+  // Draw roombas
+  for (const r of petGame.roombas) {
+    drawFlippedSprite(ctx, "1f916", r.x, r.y, 20, r.scaleX || 1);
+  }
+
+  // Draw pets (with flip, bubbles, hearts)
+  for (const pet of petGame.pets) {
+    if (pet.dragging) continue;
+    const cp = pet.alive ? pet.faceCodepoint : "1f480";
+    if (pet.hovered) {
+      drawLifted(ctx, cp, pet.x, pet.y, PET_SIZE, pet.scaleX);
+    } else {
+      drawFlippedSprite(ctx, cp, pet.x, pet.y, PET_SIZE, pet.scaleX);
+    }
+    if (pet.want && pet.alive) drawBubble(ctx, pet, ITEMS[pet.want].codepoint);
+    if (pet.heartTimer > 0) drawBubble(ctx, pet, "2764", true);
+  }
+}
+
+// ========== Canvas Hit Testing & Hover ==========
+
+function hitTest(mx, my, entity, size) {
+  return mx >= entity.x && mx <= entity.x + size &&
+         my >= entity.y && my <= entity.y + size;
+}
+
+function canvasCoords(canvas, e) {
+  const rect = canvas.getBoundingClientRect();
+  return {
+    x: (e.clientX - rect.left) * (canvas.width / rect.width),
+    y: (e.clientY - rect.top) * (canvas.height / rect.height),
+  };
+}
+
+function getMultiGrabRadius() {
+  const mgLevel = getUpgradeLevel("multi_grab");
+  if (mgLevel < 1) return 0;
+  return [0, 40, 80, 150][mgLevel];
+}
+
+// Collect nearby poops and skulls for multi-grab hover/drag
+function collectGrabGroup(centerX, centerY, primaryPoop, primarySkull) {
+  const radius = getMultiGrabRadius();
+  const poops = primaryPoop ? [primaryPoop] : [];
+  const skulls = primarySkull ? [primarySkull] : [];
+  if (radius > 0) {
+    for (const p of petGame.poops) {
+      if (p === primaryPoop) continue;
+      const dx = p.x - centerX;
+      const dy = p.y - centerY;
+      if (Math.sqrt(dx * dx + dy * dy) <= radius) poops.push(p);
+    }
+    for (const pet of petGame.pets) {
+      if (pet === primarySkull || pet.alive) continue;
+      const dx = pet.x - centerX;
+      const dy = pet.y - centerY;
+      if (Math.sqrt(dx * dx + dy * dy) <= radius) skulls.push(pet);
+    }
+  }
+  return { poops, skulls };
+}
+
+function clearAllHovers() {
+  if (!petGame) return;
+  for (const p of petGame.poops) p.hovered = false;
+  for (const pet of petGame.pets) pet.hovered = false;
+}
+
+function updateHover(canvas, e) {
+  if (!petGame) return;
+  clearAllHovers();
+
+  const { x: mx, y: my } = canvasCoords(canvas, e);
+
+  // Check skulls
+  for (const pet of petGame.pets) {
+    if (!pet.alive && hitTest(mx, my, pet, PET_SIZE)) {
+      pet.hovered = true;
+      const group = collectGrabGroup(pet.x + PET_SIZE / 2, pet.y + PET_SIZE / 2, null, pet);
+      for (const p of group.poops) p.hovered = true;
+      for (const s of group.skulls) s.hovered = true;
+      canvas.style.cursor = "grab";
+      return;
+    }
+  }
+  // Check alive pets
+  for (const pet of petGame.pets) {
+    if (pet.alive && hitTest(mx, my, pet, PET_SIZE)) {
+      pet.hovered = true;
+      canvas.style.cursor = "grab";
+      return;
+    }
+  }
+  // Check poops
+  for (const poop of petGame.poops) {
+    if (hitTest(mx, my, poop, 20)) {
+      poop.hovered = true;
+      const group = collectGrabGroup(poop.x + 10, poop.y + 10, poop, null);
+      for (const p of group.poops) p.hovered = true;
+      for (const s of group.skulls) s.hovered = true;
+      canvas.style.cursor = "grab";
+      return;
+    }
+  }
+  canvas.style.cursor = "";
+}
+
+function setupCanvasInput(canvas) {
+  canvas.addEventListener("mousemove", (e) => {
+    if (!petGame || petGame.dragging) return;
+    updateHover(canvas, e);
   });
 
+  canvas.addEventListener("mouseleave", () => {
+    if (!petGame) return;
+    clearAllHovers();
+    canvas.style.cursor = "";
+  });
+
+  canvas.addEventListener("mousedown", (e) => {
+    if (!petGame) return;
+    e.preventDefault();
+    const { x: mx, y: my } = canvasCoords(canvas, e);
+
+    // Check dead pets (skulls) first
+    for (const pet of petGame.pets) {
+      if (!pet.alive && hitTest(mx, my, pet, PET_SIZE)) {
+        startSkullDrag(e, pet);
+        return;
+      }
+    }
+    // Check alive pets
+    for (const pet of petGame.pets) {
+      if (pet.alive && hitTest(mx, my, pet, PET_SIZE)) {
+        startPetDrag(e, pet);
+        return;
+      }
+    }
+    // Check poops
+    for (const poop of petGame.poops) {
+      if (hitTest(mx, my, poop, 20)) {
+        startPoopDrag(e, poop);
+        return;
+      }
+    }
+  });
+}
+
+function createGhost(src) {
+  const ghost = document.createElement("img");
+  ghost.src = src;
+  ghost.className = "drag-ghost";
+  document.getElementById("game-root").appendChild(ghost);
+  return ghost;
+}
+
+function positionGhosts(ghosts, ev) {
+  const count = ghosts.length;
+  for (let i = 0; i < count; i++) {
+    // Fan out slightly around cursor
+    const angle = (i / Math.max(count, 1)) * Math.PI * 2;
+    const spread = count > 1 ? Math.min(count * 3, 20) : 0;
+    const ox = Math.cos(angle) * spread;
+    const oy = Math.sin(angle) * spread;
+    ghosts[i].style.left = (toLayoutX(ev.clientX) - 15 + ox) + "px";
+    ghosts[i].style.top = (toLayoutY(ev.clientY) - 15 + oy) + "px";
+  }
+}
+
+function isOverBin(ev) {
+  const bin = document.querySelector('.desktop-icon[data-app="recycle-bin"]');
+  if (!bin) return false;
+  const rect = bin.getBoundingClientRect();
+  return ev.clientX >= rect.left && ev.clientX <= rect.right &&
+         ev.clientY >= rect.top && ev.clientY <= rect.bottom;
+}
+
+function isOverCanvas(ev) {
+  if (!petGame) return false;
+  const rect = petGame.area.getBoundingClientRect();
+  return ev.clientX >= rect.left && ev.clientX <= rect.right &&
+         ev.clientY >= rect.top && ev.clientY <= rect.bottom;
+}
+
+function clampToArea(ev) {
+  const areaRect = petGame.area.getBoundingClientRect();
+  const scaleX = petGame.area.clientWidth / areaRect.width;
+  const scaleY = petGame.area.clientHeight / areaRect.height;
+  const x = Math.max(5, Math.min(petGame.area.clientWidth - 25,
+    (ev.clientX - areaRect.left) * scaleX - 10));
+  const y = Math.max(5, Math.min(petGame.area.clientHeight - 25,
+    (ev.clientY - areaRect.top) * scaleY - 10));
+  return { x, y };
+}
+
+function startPetDrag(e, pet) {
+  const startX = e.clientX;
+  const startY = e.clientY;
+  let didDrag = false;
+  let ghost = null;
+
+  function onMove(ev) {
+    const dx = ev.clientX - startX;
+    const dy = ev.clientY - startY;
+    if (!didDrag && Math.sqrt(dx * dx + dy * dy) > 5) {
+      didDrag = true;
+      const img = getSpriteImage(pet.faceCodepoint);
+      ghost = createGhost(img ? img.src : "");
+      pet.dragging = true;
+      petGame.dragging = true;
+      clearAllHovers();
+    }
+    if (ghost) {
+      ghost.style.left = (toLayoutX(ev.clientX) - 15) + "px";
+      ghost.style.top = (toLayoutY(ev.clientY) - 15) + "px";
+    }
+  }
+
+  function onUp(ev) {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    if (ghost) ghost.remove();
+    pet.dragging = false;
+    petGame.dragging = false;
+
+    if (!didDrag) {
+      pet.heartTimer = 1500;
+      playHeart();
+      return;
+    }
+
+    if (isOverBin(ev)) {
+      const originX = pet.x;
+      const originY = pet.y;
+      grindPet(pet);
+      multiGrabAround(originX, originY);
+      return;
+    }
+
+    // Dropped in pet area — relocate
+    if (petGame && isOverCanvas(ev)) {
+      const pos = clampToArea(ev);
+      pet.x = pos.x;
+      pet.y = pos.y;
+      pet.targetX = pos.x;
+      pet.targetY = pos.y;
+    }
+    // If off canvas, pet stays at original position (no change needed)
+  }
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+function startSkullDrag(e, pet) {
+  // Collect the grab group (skull + nearby poops/skulls)
+  const centerX = pet.x + PET_SIZE / 2;
+  const centerY = pet.y + PET_SIZE / 2;
+  const group = collectGrabGroup(centerX, centerY, null, pet);
+  const allPoops = group.poops;
+  const allSkulls = group.skulls;
+
+  // Save original positions
+  const originals = new Map();
+  originals.set(pet, { x: pet.x, y: pet.y });
+  for (const p of allPoops) originals.set(p, { x: p.x, y: p.y });
+  for (const s of allSkulls) if (s !== pet) originals.set(s, { x: s.x, y: s.y });
+
+  // Create ghosts for all
+  const ghosts = [];
+  const skullImg = getSpriteImage("1f480");
+  ghosts.push(createGhost(skullImg ? skullImg.src : ""));
+  pet.dragging = true;
+  for (const p of allPoops) {
+    const pImg = getSpriteImage(POOP_CODEPOINT);
+    ghosts.push(createGhost(pImg ? pImg.src : ""));
+    p.dragging = true;
+  }
+  for (const s of allSkulls) {
+    if (s === pet) continue;
+    ghosts.push(createGhost(skullImg ? skullImg.src : ""));
+    s.dragging = true;
+  }
+  petGame.dragging = true;
+  clearAllHovers();
+  positionGhosts(ghosts, e);
+
+  function onMove(ev) {
+    positionGhosts(ghosts, ev);
+  }
+
+  function onUp(ev) {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    for (const g of ghosts) g.remove();
+    petGame.dragging = false;
+
+    if (isOverBin(ev)) {
+      // Recycle everything
+      dismissSkull(pet);
+      for (const p of allPoops) {
+        petGame.poops = petGame.poops.filter((pp) => pp !== p);
+        addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now(), coinValue: getPoopCoinValue() });
+      }
+      for (const s of allSkulls) {
+        if (s === pet) continue;
+        dismissSkull(s);
+      }
+      cureSickPets();
+      notifyTutorialEvent("first-shred");
+      return;
+    }
+
+    // Not over bin — restore or relocate
+    if (isOverCanvas(ev)) {
+      const pos = clampToArea(ev);
+      // Drop primary at cursor, offset others relative
+      const dx = pos.x - pet.x;
+      const dy = pos.y - pet.y;
+      pet.x = pos.x;
+      pet.y = pos.y;
+      pet.dragging = false;
+      for (const p of allPoops) {
+        const orig = originals.get(p);
+        p.x = Math.max(0, Math.min(petGame.area.clientWidth - 20, orig.x + dx));
+        p.y = Math.max(0, Math.min(petGame.area.clientHeight - 20, orig.y + dy));
+        p.dragging = false;
+      }
+      for (const s of allSkulls) {
+        if (s === pet) continue;
+        const orig = originals.get(s);
+        s.x = Math.max(5, Math.min(petGame.area.clientWidth - PET_SIZE - 5, orig.x + dx));
+        s.y = Math.max(5, Math.min(petGame.area.clientHeight - PET_SIZE - 5, orig.y + dy));
+        s.dragging = false;
+      }
+    } else {
+      // Off canvas — return to original positions
+      for (const [entity, orig] of originals) {
+        entity.x = orig.x;
+        entity.y = orig.y;
+        entity.dragging = false;
+      }
+    }
+  }
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+function startPoopDrag(e, poop) {
+  // Collect the grab group (poop + nearby poops/skulls)
+  const centerX = poop.x + 10;
+  const centerY = poop.y + 10;
+  const group = collectGrabGroup(centerX, centerY, poop, null);
+  const allPoops = group.poops;
+  const allSkulls = group.skulls;
+
+  // Save original positions
+  const originals = new Map();
+  originals.set(poop, { x: poop.x, y: poop.y });
+  for (const p of allPoops) if (p !== poop) originals.set(p, { x: p.x, y: p.y });
+  for (const s of allSkulls) originals.set(s, { x: s.x, y: s.y });
+
+  // Create ghosts for all
+  const ghosts = [];
+  const poopImg = getSpriteImage(POOP_CODEPOINT);
+  ghosts.push(createGhost(poopImg ? poopImg.src : ""));
+  poop.dragging = true;
+  for (const p of allPoops) {
+    if (p === poop) continue;
+    ghosts.push(createGhost(poopImg ? poopImg.src : ""));
+    p.dragging = true;
+  }
+  const skullImg = getSpriteImage("1f480");
+  for (const s of allSkulls) {
+    ghosts.push(createGhost(skullImg ? skullImg.src : ""));
+    s.dragging = true;
+  }
+  petGame.dragging = true;
+  clearAllHovers();
+  positionGhosts(ghosts, e);
+
+  function onMove(ev) {
+    positionGhosts(ghosts, ev);
+  }
+
+  function onUp(ev) {
+    document.removeEventListener("mousemove", onMove);
+    document.removeEventListener("mouseup", onUp);
+    for (const g of ghosts) g.remove();
+    petGame.dragging = false;
+
+    if (isOverBin(ev)) {
+      // Recycle everything
+      for (const p of allPoops) {
+        petGame.poops = petGame.poops.filter((pp) => pp !== p);
+        addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now(), coinValue: getPoopCoinValue() });
+      }
+      for (const s of allSkulls) {
+        dismissSkull(s);
+      }
+      cureSickPets();
+      notifyTutorialEvent("first-shred");
+      return;
+    }
+
+    // Not over bin — restore or relocate
+    if (isOverCanvas(ev)) {
+      const pos = clampToArea(ev);
+      const dx = pos.x - poop.x;
+      const dy = pos.y - poop.y;
+      poop.x = pos.x;
+      poop.y = pos.y;
+      poop.dragging = false;
+      for (const p of allPoops) {
+        if (p === poop) continue;
+        const orig = originals.get(p);
+        p.x = Math.max(0, Math.min(petGame.area.clientWidth - 20, orig.x + dx));
+        p.y = Math.max(0, Math.min(petGame.area.clientHeight - 20, orig.y + dy));
+        p.dragging = false;
+      }
+      for (const s of allSkulls) {
+        const orig = originals.get(s);
+        s.x = Math.max(5, Math.min(petGame.area.clientWidth - PET_SIZE - 5, orig.x + dx));
+        s.y = Math.max(5, Math.min(petGame.area.clientHeight - PET_SIZE - 5, orig.y + dy));
+        s.dragging = false;
+      }
+    } else {
+      // Off canvas — return to original positions
+      for (const [entity, orig] of originals) {
+        entity.x = orig.x;
+        entity.y = orig.y;
+        entity.dragging = false;
+      }
+    }
+  }
+
+  document.addEventListener("mousemove", onMove);
+  document.addEventListener("mouseup", onUp);
+}
+
+// ========== Pet Entity (pure data) ==========
+
+function getSplitThreshold() {
+  const ranges = [[10, 15], [7, 11], [4, 8], [2, 5]];
+  const [min, max] = ranges[getUpgradeLevel("reproduction")];
+  return min + Math.floor(Math.random() * (max - min + 1));
+}
+
+function createPet(x, y) {
   const pet = {
-    el: petEl,
-    bubble,
-    bubbleImg,
-    heartBubble,
-    heartTimeout: null,
+    faceCodepoint: MOOD_FACES.happy,
+    scaleX: 1,
+    heartTimer: 0,
+    dragging: false,
+    hovered: false,
     name: generatePetName(),
+    birthTime: Date.now(),
     x, y,
     targetX: x,
     targetY: y,
@@ -138,32 +675,22 @@ function createPet(area, x, y) {
     wantTimeout: null,
     ignoreTimeout: null,
     pleasedTimeout: null,
+    poopCorner: null,
+    fedCount: 0,
+    splitThreshold: getSplitThreshold(),
   };
 
   setPetFace(pet, "happy");
-  petEl.style.transform = `translate(${x}px, ${y}px)`;
-
-  petEl.addEventListener("click", () => {
-    if (!pet.alive) return;
-    if (pet.heartTimeout) clearTimeout(pet.heartTimeout);
-    heartBubble.style.left = (pet.x + PET_SIZE / 2 - 10) + "px";
-    heartBubble.style.top = (pet.y - 24) + "px";
-    heartBubble.classList.add("visible");
-    playHeart();
-    pet.heartTimeout = setTimeout(() => {
-      heartBubble.classList.remove("visible");
-    }, 1500);
-  });
-
   return pet;
 }
 
-async function setPetFace(pet, mood) {
+function setPetFace(pet, mood) {
   if (pet.sick && mood !== "sick") return;
   if (pet.crowded && mood !== "scared" && mood !== "sick") return;
   pet.mood = mood;
-  const src = await pixelateEmoji(MOOD_FACES[mood]);
-  if (pet.alive || mood === "happy") pet.el.src = src;
+  if (pet.alive || mood === "happy") {
+    pet.faceCodepoint = MOOD_FACES[mood];
+  }
 }
 
 function calcPetCap() {
@@ -177,8 +704,8 @@ function calcPetCap() {
 function scheduleNextWant(pet) {
   if (!petGame || !pet.alive) return;
   const patienceLevel = getUpgradeLevel("patience");
-  const baseDelay = [15000, 20000, 25000, 35000][patienceLevel];
-  const delay = baseDelay + Math.random() * baseDelay;
+  const baseDelay = [5000, 10000, 18000, 30000][patienceLevel];
+  const delay = baseDelay + Math.random() * baseDelay * 0.5;
   pet.wantTimeout = setTimeout(() => {
     if (!petGame || !pet.alive) return;
     const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
@@ -186,33 +713,38 @@ function scheduleNextWant(pet) {
   }, delay);
 }
 
-async function setPetWant(pet, type) {
+// Mood degrades with each missed want: happy -> neutral -> sad -> death
+const NEGLECT_MOODS = ["happy", "neutral", "sad"];
+
+function getNeglectMood(missedWants) {
+  return NEGLECT_MOODS[Math.min(missedWants, NEGLECT_MOODS.length - 1)];
+}
+
+function setPetWant(pet, type) {
   if (!petGame || !pet.alive) return;
   pet.want = type;
-  setPetFace(pet, "neutral");
-
-  const src = await pixelateEmoji(ITEMS[type].codepoint);
-  pet.bubbleImg.src = src;
-  pet.bubble.style.display = "flex";
+  // Show their current neglect-level face while wanting
+  setPetFace(pet, getNeglectMood(pet.missedWants));
   updatePetStatus();
 
   pet.ignoreTimeout = setTimeout(() => {
     if (!petGame || !pet.alive || !pet.want) return;
     pet.missedWants++;
-    setPetFace(pet, "sad");
     updatePetStatus();
 
-    const missThreshold = [3, 4, 5, 7][getUpgradeLevel("patience")];
+    const missThreshold = [2, 3, 5, 7][getUpgradeLevel("patience")];
     if (pet.missedWants >= missThreshold) {
       killPet(pet);
       return;
     }
 
+    // Show the degraded mood
+    setPetFace(pet, getNeglectMood(pet.missedWants));
+
     setTimeout(() => {
       if (!petGame || !pet.alive) return;
       pet.want = null;
-      pet.bubble.style.display = "none";
-      setPetFace(pet, "happy");
+      // Stay at their degraded mood — no reset to happy
       scheduleNextWant(pet);
       updatePetStatus();
     }, 5000);
@@ -223,9 +755,9 @@ function updatePetStatus() {
   if (!petGame || !petGame.statusBar) return;
   const living = petGame.pets.filter((p) => p.alive);
   const wanting = living.filter((p) => p.want);
-  let text = `Pets: ${living.length}`;
+  let text = `Pets: ${living.length} | Coin: ${inventory.coin}`;
   if (wanting.length > 0) {
-    text += ` | ${wanting.length} want${wanting.length > 1 ? "s" : ""} something`;
+    text += ` | ${wanting.length} wanting`;
   }
   petGame.statusBar.querySelector(".status-bar-field").textContent = text;
 }
@@ -234,93 +766,118 @@ function consumeItem(pet, item) {
   if (!petGame || !pet.alive) return;
 
   item.consumed = true;
-  item.el.remove();
   if (item.fadeTimer) clearTimeout(item.fadeTimer);
 
   pet.want = null;
-  pet.bubble.style.display = "none";
-  pet.missedWants = 0;
+  // Recover one neglect level per feeding (not full reset)
+  if (pet.missedWants > 0) pet.missedWants--;
 
   if (pet.ignoreTimeout) { clearTimeout(pet.ignoreTimeout); pet.ignoreTimeout = null; }
 
   setPetFace(pet, "pleased");
   playFeed();
+  notifyTutorialEvent("first-feed");
 
   if (pet.pleasedTimeout) clearTimeout(pet.pleasedTimeout);
   pet.pleasedTimeout = setTimeout(() => {
     if (!petGame || !pet.alive) return;
-    setPetFace(pet, "happy");
+    // Return to their current neglect mood level
+    setPetFace(pet, getNeglectMood(pet.missedWants));
   }, 2000);
+
+  // Track feedings for reproduction
+  pet.fedCount++;
+  if (pet.fedCount >= pet.splitThreshold) {
+    pet.fedCount = 0;
+    pet.splitThreshold = getSplitThreshold();
+    spawnChildPet(pet);
+    updateCrowdedState();
+  }
 
   updatePetStatus();
   scheduleNextWant(pet);
 }
 
-async function killPet(pet) {
+function killPet(pet) {
   pet.alive = false;
   pet.want = null;
-  pet.bubble.style.display = "none";
-  pet.heartBubble.classList.remove("visible");
-  if (pet.heartTimeout) clearTimeout(pet.heartTimeout);
+  pet.heartTimer = 0;
 
   if (pet.wantTimeout) clearTimeout(pet.wantTimeout);
   if (pet.ignoreTimeout) clearTimeout(pet.ignoreTimeout);
   if (pet.pleasedTimeout) clearTimeout(pet.pleasedTimeout);
 
   playPetDeath();
-  const skullSrc = await pixelateEmoji("1f480");
-  pet.el.src = skullSrc;
-  pet.el.style.cursor = "grab";
-
-  pet.el.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    const skullOriginX = pet.x;
-    const skullOriginY = pet.y;
-    startDrag(e, pet.el, () => {
-      dismissSkull(pet);
-
-      // Multi-grab radius for skull drag
-      const mgLevel = getUpgradeLevel("multi_grab");
-      if (mgLevel >= 1) {
-        const radius = [0, 40, 80, 150][mgLevel];
-        for (const p of [...petGame.poops]) {
-          const dx = p.x - skullOriginX;
-          const dy = p.y - skullOriginY;
-          if (Math.sqrt(dx * dx + dy * dy) <= radius) {
-            p.el.remove();
-            petGame.poops = petGame.poops.filter((pp) => pp !== p);
-            addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now() });
-          }
-        }
-        for (const other of [...petGame.pets]) {
-          if (!other.alive && other !== pet) {
-            const dx = other.x - skullOriginX;
-            const dy = other.y - skullOriginY;
-            if (Math.sqrt(dx * dx + dy * dy) <= radius) {
-              dismissSkull(other);
-            }
-          }
-        }
-      }
-      cureSickPets();
-    });
-  });
   updatePetStatus();
+  notifyTutorialEvent("first-death");
 }
 
-function dismissSkull(pet) {
+function grindPet(pet) {
   if (!petGame) return;
-  addToRecycleBin({ name: pet.name, timestamp: Date.now() });
-  pet.el.remove();
-  pet.bubble.remove();
-  pet.heartBubble.remove();
+  notifyTutorialEvent("first-grind");
+  pet.alive = false;
+  pet.want = null;
+  pet.heartTimer = 0;
+  if (pet.wantTimeout) clearTimeout(pet.wantTimeout);
+  if (pet.ignoreTimeout) clearTimeout(pet.ignoreTimeout);
+  if (pet.pleasedTimeout) clearTimeout(pet.pleasedTimeout);
+
+  addToRecycleBin({ name: pet.name, timestamp: Date.now(), coinValue: getPetCoinValue() });
   petGame.pets = petGame.pets.filter((p) => p !== pet);
 
   const living = petGame.pets.filter((p) => p.alive);
   if (living.length === 0) {
     const areaW = petGame.area.clientWidth;
     const areaH = petGame.area.clientHeight;
-    const newPet = createPet(petGame.area, areaW / 2, areaH / 2);
+    const newPet = createPet(areaW / 2, areaH / 2);
+    petGame.pets.push(newPet);
+    scheduleNextWant(newPet);
+  }
+  updatePetStatus();
+}
+
+function multiGrabAround(originX, originY) {
+  if (!petGame) return;
+  const mgLevel = getUpgradeLevel("multi_grab");
+  if (mgLevel < 1) return;
+  const radius = [0, 40, 80, 150][mgLevel];
+
+  // Use spatial grid for poops if available
+  const nearbyPoops = petGame.poopGrid
+    ? petGame.poopGrid.query(originX, originY, radius)
+    : petGame.poops.filter((p) => {
+        const dx = p.x - originX;
+        const dy = p.y - originY;
+        return Math.sqrt(dx * dx + dy * dy) <= radius;
+      });
+
+  for (const p of nearbyPoops) {
+    petGame.poops = petGame.poops.filter((pp) => pp !== p);
+    addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now(), coinValue: getPoopCoinValue() });
+  }
+  for (const pet of [...petGame.pets]) {
+    if (!pet.alive) {
+      const dx = pet.x - originX;
+      const dy = pet.y - originY;
+      if (Math.sqrt(dx * dx + dy * dy) <= radius) {
+        dismissSkull(pet);
+      }
+    }
+  }
+  cureSickPets();
+}
+
+function dismissSkull(pet, coinValue) {
+  if (!petGame) return;
+  const cv = coinValue !== undefined ? coinValue : getSkullCoinValue();
+  addToRecycleBin({ name: pet.name, timestamp: Date.now(), coinValue: cv });
+  petGame.pets = petGame.pets.filter((p) => p !== pet);
+
+  const living = petGame.pets.filter((p) => p.alive);
+  if (living.length === 0) {
+    const areaW = petGame.area.clientWidth;
+    const areaH = petGame.area.clientHeight;
+    const newPet = createPet(areaW / 2, areaH / 2);
     petGame.pets.push(newPet);
     scheduleNextWant(newPet);
   }
@@ -341,7 +898,6 @@ function getMostNeglectedPet(livingPets) {
 const CROWDED_DEATH_THRESHOLD = 15000;
 
 function checkPetPopulationCap() {
-  // Called on resize — just update crowding state, don't insta-kill
   updateCrowdedState();
 }
 
@@ -352,18 +908,16 @@ function updateCrowdedState() {
   const overCount = living.length - cap;
 
   if (overCount <= 0) {
-    // Relieve all crowded pets
     for (const pet of living) {
       if (pet.crowded) {
         pet.crowded = false;
         pet.crowdedTimer = 0;
-        if (!pet.sick) setPetFace(pet, "happy");
+        if (!pet.sick) setPetFace(pet, getNeglectMood(pet.missedWants));
       }
     }
     return;
   }
 
-  // Pick the most neglected pets to be crowded
   const sorted = [...living].sort((a, b) => {
     if (b.missedWants !== a.missedWants) return b.missedWants - a.missedWants;
     return petGame.pets.indexOf(a) - petGame.pets.indexOf(b);
@@ -377,25 +931,14 @@ function updateCrowdedState() {
         pet.crowded = true;
         pet.crowdedTimer = 0;
         setPetFace(pet, "scared");
+        notifyTutorialEvent("first-crowded");
       }
     } else if (pet.crowded) {
       pet.crowded = false;
       pet.crowdedTimer = 0;
-      if (!pet.sick) setPetFace(pet, "happy");
+      if (!pet.sick) setPetFace(pet, getNeglectMood(pet.missedWants));
     }
   }
-}
-
-function tryPetSplit() {
-  if (!petGame) return;
-  const splitChance = [0.25, 0.35, 0.50, 0.70][getUpgradeLevel("reproduction")];
-  for (const pet of petGame.pets) {
-    if (!pet.alive) continue;
-    if (Math.random() < splitChance) {
-      spawnChildPet(pet);
-    }
-  }
-  updateCrowdedState();
 }
 
 function spawnChildPet(parent) {
@@ -406,33 +949,27 @@ function spawnChildPet(parent) {
   const offsetY = -20 + Math.random() * 40;
   const x = Math.max(5, Math.min(areaW - PET_SIZE - 5, parent.x + offsetX));
   const y = Math.max(5, Math.min(areaH - PET_SIZE - 5, parent.y + offsetY));
-  const child = createPet(petGame.area, x, y);
+  const child = createPet(x, y);
   petGame.pets.push(child);
   playBirth();
+  notifyTutorialEvent("first-reproduction");
   scheduleNextWant(child);
 
-  parent.el.style.filter = "brightness(2)";
-  setTimeout(() => { if (parent.alive) parent.el.style.filter = ""; }, 200);
+  // Brief flash effect via heartTimer
+  parent.heartTimer = 200;
 }
 
-async function dropItem(type) {
+function dropItem(type) {
   if (!petGame) return;
   if (!useInventory(type)) return;
 
   const area = petGame.area;
   const areaW = area.clientWidth;
   const areaH = area.clientHeight;
-  const src = await pixelateEmoji(ITEMS[type].codepoint);
-
-  const img = document.createElement("img");
-  img.className = "pet-item";
-  img.src = src;
-  img.draggable = false;
 
   const dropX = 10 + Math.random() * (areaW - ITEM_SIZE - 20);
   const landY = areaH * 0.3 + Math.random() * (areaH * 0.6 - ITEM_SIZE);
   const item = {
-    el: img,
     type,
     x: dropX,
     y: -ITEM_SIZE,
@@ -441,157 +978,78 @@ async function dropItem(type) {
     landed: false,
     consumed: false,
     fadeTimer: null,
+    opacity: 1,
+    fadeStart: 0,
   };
 
-  img.style.transform = `translate(${dropX}px, ${-ITEM_SIZE}px)`;
-  area.appendChild(img);
   petGame.items.push(item);
 }
 
-async function createPoopAt(x, y) {
+function createPoopAt(rawX, rawY) {
   if (!petGame) return;
-  const el = document.createElement("img");
-  el.className = "poop-sprite";
-  const src = await pixelateEmoji(POOP_CODEPOINT);
-  el.src = src;
-  el.draggable = false;
+  if (petGame.poops.length >= MAX_POOPS) return;
+  const areaW = petGame.area.clientWidth;
+  const areaH = petGame.area.clientHeight;
+  const px = Math.max(0, Math.min(areaW - 20, rawX));
+  const py = Math.max(0, Math.min(areaH - 20, rawY));
 
-  let poopX = x;
-  let poopY = y;
-
-  // Poop Magnet: force poop to corners
-  if (getUpgradeLevel("poop_magnet") >= 1) {
-    const areaW = petGame.area.clientWidth;
-    const areaH = petGame.area.clientHeight;
-    const corners = [[5, 5], [areaW - 25, 5], [5, areaH - 25], [areaW - 25, areaH - 25]];
-    const corner = corners[Math.floor(Math.random() * corners.length)];
-    poopX = corner[0];
-    poopY = corner[1];
-  }
-
-  el.style.transform = `translate(${poopX}px, ${poopY}px)`;
-  petGame.area.appendChild(el);
-  const poop = { el, x: poopX, y: poopY };
+  const poop = { x: px, y: py, dragging: false, hovered: false };
   petGame.poops.push(poop);
   playPoopSplat();
-
-  const originX = poopX;
-  const originY = poopY;
-
-  el.addEventListener("mousedown", (e) => {
-    e.preventDefault();
-    startDrag(e, el, () => {
-      // Remove the dragged poop
-      poop.el.remove();
-      petGame.poops = petGame.poops.filter((p) => p !== poop);
-      addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now() });
-
-      // Multi-grab: collect nearby poops and skulls within radius
-      const mgLevel = getUpgradeLevel("multi_grab");
-      if (mgLevel >= 1) {
-        const radius = [0, 40, 80, 150][mgLevel];
-        for (const p of [...petGame.poops]) {
-          const dx = p.x - originX;
-          const dy = p.y - originY;
-          if (Math.sqrt(dx * dx + dy * dy) <= radius) {
-            p.el.remove();
-            petGame.poops = petGame.poops.filter((pp) => pp !== p);
-            addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now() });
-          }
-        }
-        for (const pet of [...petGame.pets]) {
-          if (!pet.alive) {
-            const dx = pet.x - originX;
-            const dy = pet.y - originY;
-            if (Math.sqrt(dx * dx + dy * dy) <= radius) {
-              dismissSkull(pet);
-            }
-          }
-        }
-      }
-      cureSickPets();
-    });
-  });
+  notifyTutorialEvent("first-poop");
 }
 
 function spawnPoopPerPet() {
   if (!petGame) return;
   const living = petGame.pets.filter((p) => p.alive);
   for (const pet of living) {
+    if (pet.poopCorner) continue;
     if (Math.random() < POOP_PER_PET_CHANCE) {
-      createPoopAt(pet.x, pet.y + PET_SIZE);
+      if (getUpgradeLevel("poop_magnet") >= 1) {
+        const areaW = petGame.area.clientWidth;
+        const areaH = petGame.area.clientHeight;
+        const corners = [[5, 5], [areaW - 25, 5], [5, areaH - 25], [areaW - 25, areaH - 25]];
+        const corner = corners[Math.floor(Math.random() * corners.length)];
+        pet.poopCorner = { x: corner[0], y: corner[1] };
+        pet.targetX = corner[0];
+        pet.targetY = corner[1];
+      } else {
+        createPoopAt(pet.x, pet.y + PET_SIZE);
+      }
     }
   }
 }
 
-function nearPoop(pet) {
-  if (!petGame) return false;
+function nearPoopCount(pet) {
+  if (!petGame) return 0;
   const cx = pet.x + PET_SIZE / 2;
   const cy = pet.y + PET_SIZE / 2;
+  if (petGame.poopGrid) {
+    return petGame.poopGrid.query(cx, cy, POOP_PROXIMITY).length;
+  }
+  let count = 0;
   for (const poop of petGame.poops) {
     const dx = cx - (poop.x + 10);
     const dy = cy - (poop.y + 10);
-    if (Math.sqrt(dx * dx + dy * dy) < POOP_PROXIMITY) return true;
+    if (Math.sqrt(dx * dx + dy * dy) < POOP_PROXIMITY) count++;
   }
-  return false;
+  return count;
 }
 
 function cureSickPets() {
   if (!petGame) return;
   for (const pet of petGame.pets) {
     if (!pet.alive || !pet.sick) continue;
-    if (!nearPoop(pet)) {
+    if (nearPoopCount(pet) === 0) {
       pet.sick = false;
       pet.sickTimer = 0;
-      setPetFace(pet, "happy");
+      setPetFace(pet, getNeglectMood(pet.missedWants));
     }
   }
 }
 
-function startDrag(e, sourceEl, onDrop) {
-  const ghost = document.createElement("img");
-  ghost.src = sourceEl.src;
-  ghost.className = "drag-ghost";
-  ghost.style.left = (e.clientX - 15) + "px";
-  ghost.style.top = (e.clientY - 15) + "px";
-  document.body.appendChild(ghost);
-  sourceEl.style.visibility = "hidden";
-
-  function onMove(ev) {
-    ghost.style.left = (ev.clientX - 15) + "px";
-    ghost.style.top = (ev.clientY - 15) + "px";
-  }
-
-  function onUp(ev) {
-    document.removeEventListener("mousemove", onMove);
-    document.removeEventListener("mouseup", onUp);
-    ghost.remove();
-
-    const bin = document.querySelector('.desktop-icon[data-app="recycle-bin"]');
-    if (bin) {
-      const rect = bin.getBoundingClientRect();
-      if (ev.clientX >= rect.left && ev.clientX <= rect.right &&
-          ev.clientY >= rect.top && ev.clientY <= rect.bottom) {
-        onDrop();
-        return;
-      }
-    }
-    sourceEl.style.visibility = "";
-  }
-
-  document.addEventListener("mousemove", onMove);
-  document.addEventListener("mouseup", onUp);
-}
-
-async function createRoomba(area, x, y) {
-  const el = document.createElement("img");
-  el.className = "roomba-sprite";
-  const src = await pixelateEmoji("1f916");
-  el.src = src;
-  el.draggable = false;
-  el.style.transform = `translate(${x}px, ${y}px)`;
-  area.appendChild(el);
-  return { el, x, y, targetX: x, targetY: y, wanderTimer: 0 };
+function createRoomba(x, y) {
+  return { x, y, targetX: x, targetY: y, wanderTimer: 0, scaleX: 1 };
 }
 
 function spawnRoombas() {
@@ -602,26 +1060,20 @@ function spawnRoombas() {
   for (let i = petGame.roombas.length; i < count; i++) {
     const x = 10 + Math.random() * (areaW - 30);
     const y = 10 + Math.random() * (areaH - 30);
-    createRoomba(petGame.area, x, y).then((r) => {
-      if (petGame) petGame.roombas.push(r);
-    });
+    petGame.roombas.push(createRoomba(x, y));
   }
+}
+
+function resizeCanvas() {
+  if (!petGame || !petGame.canvas) return;
+  petGame.canvas.width = petGame.area.clientWidth;
+  petGame.canvas.height = petGame.area.clientHeight;
+  petGame.ctx.imageSmoothingEnabled = false;
 }
 
 function petLoop(timestamp) {
   if (!petGame) return;
 
-  // Pause logic
-  const minimized = isWindowMinimized("emoji-game");
-  const active = isWindowActive("emoji-game");
-  const shouldPause = minimized
-    ? getUpgradeLevel("active_minimized") < 1
-    : (!active && getUpgradeLevel("active_deselected") < 1);
-  if (shouldPause) {
-    petGame.prevTimestamp = 0;
-    petGame.animationId = requestAnimationFrame(petLoop);
-    return;
-  }
 
   const elapsed = petGame.prevTimestamp ? timestamp - petGame.prevTimestamp : 16.667;
   const dt = Math.min(elapsed / 16.667, 3);
@@ -631,12 +1083,14 @@ function petLoop(timestamp) {
   const areaW = area.clientWidth;
   const areaH = area.clientHeight;
 
-  // Split timer
-  petGame.splitTimer -= elapsed;
-  if (petGame.splitTimer <= 0) {
-    petGame.splitTimer = 30000;
-    tryPetSplit();
+  // Resize canvas if needed
+  if (petGame.canvas.width !== areaW || petGame.canvas.height !== areaH) {
+    resizeCanvas();
   }
+
+  // Rebuild spatial grid for poops
+  petGame.poopGrid.clear();
+  for (const p of petGame.poops) petGame.poopGrid.insert(p);
 
   // Poop timer (per-pet chance every 10s)
   petGame.poopTimer -= elapsed;
@@ -650,7 +1104,7 @@ function petLoop(timestamp) {
     if (!pet.alive) continue;
 
     pet.wanderTimer -= elapsed;
-    if (pet.wanderTimer <= 0) {
+    if (pet.wanderTimer <= 0 && !pet.poopCorner) {
       pet.targetX = 5 + Math.random() * (areaW - PET_SIZE - 10);
       pet.targetY = 5 + Math.random() * (areaH - PET_SIZE - 10);
       pet.wanderTimer = 2000 + Math.random() * 2000;
@@ -660,7 +1114,10 @@ function petLoop(timestamp) {
     let walkY = pet.targetY;
     let targetItem = null;
 
-    if (pet.want) {
+    if (pet.poopCorner) {
+      walkX = pet.poopCorner.x;
+      walkY = pet.poopCorner.y;
+    } else if (pet.want) {
       let bestDist = Infinity;
       for (const item of petGame.items) {
         if (item.type === pet.want && item.landed && !item.consumed) {
@@ -688,17 +1145,16 @@ function petLoop(timestamp) {
       pet.y += (dy / dist) * step;
     }
 
-    const scaleX = dx < -1 ? -1 : 1;
-    pet.el.style.transform = `translate(${pet.x}px, ${pet.y}px) scaleX(${scaleX})`;
+    pet.scaleX = dx < -1 ? -1 : 1;
 
-    if (pet.bubble.style.display !== "none") {
-      pet.bubble.style.left = (pet.x - 1) + "px";
-      pet.bubble.style.top = (pet.y - 26) + "px";
-    }
-
-    if (pet.heartBubble.classList.contains("visible")) {
-      pet.heartBubble.style.left = (pet.x + PET_SIZE / 2 - 10) + "px";
-      pet.heartBubble.style.top = (pet.y - 24) + "px";
+    // Check if pet arrived at poop corner
+    if (pet.poopCorner) {
+      const pcDx = pet.poopCorner.x - pet.x;
+      const pcDy = pet.poopCorner.y - pet.y;
+      if (Math.sqrt(pcDx * pcDx + pcDy * pcDy) < 3) {
+        createPoopAt(pet.poopCorner.x, pet.poopCorner.y + PET_SIZE);
+        pet.poopCorner = null;
+      }
     }
 
     if (targetItem && targetItem.landed && !targetItem.consumed) {
@@ -712,17 +1168,29 @@ function petLoop(timestamp) {
       }
     }
 
-    // Sickness from poop proximity (Poop Immunity slows this)
-    if (nearPoop(pet)) {
-      pet.sickTimer += elapsed;
+    // Sickness from poop proximity — scales with nearby poop count
+    const poopCount = nearPoopCount(pet);
+    if (poopCount > 0) {
+      // More poops = faster sickness accumulation (1 poop = 1x, 2 = 1.5x, 3 = 2x, etc.)
+      const poopScale = 1 + (poopCount - 1) * 0.5;
+      pet.sickTimer += elapsed * poopScale;
       const poopImmLevel = getUpgradeLevel("poop_immunity");
       const sickMult = [1, 1.5, 2.5, 5][poopImmLevel];
       if (!pet.sick && pet.sickTimer >= SICK_THRESHOLD * sickMult) {
         pet.sick = true;
         setPetFace(pet, "sick");
+        notifyTutorialEvent("first-sick");
       }
       if (pet.sickTimer >= DEATH_THRESHOLD * sickMult) {
         killPet(pet);
+      }
+    } else if (pet.sick) {
+      // Recover slowly when away from poop (drain sickTimer)
+      pet.sickTimer -= elapsed * 0.5;
+      if (pet.sickTimer <= 0) {
+        pet.sick = false;
+        pet.sickTimer = 0;
+        setPetFace(pet, getNeglectMood(pet.missedWants));
       }
     }
 
@@ -733,6 +1201,11 @@ function petLoop(timestamp) {
         killPet(pet);
         updateCrowdedState();
       }
+    }
+
+    // Heart timer countdown
+    if (pet.heartTimer > 0) {
+      pet.heartTimer -= elapsed;
     }
   }
 
@@ -751,12 +1224,16 @@ function petLoop(timestamp) {
       const radarRadius = [0, 50, 100, 200][radarLevel];
       let bestDist = radarRadius;
       let bestTarget = null;
-      for (const poop of petGame.poops) {
+
+      // Use spatial grid for poop radar
+      const nearbyPoops = petGame.poopGrid.query(roomba.x, roomba.y, radarRadius);
+      for (const poop of nearbyPoops) {
         const dx = poop.x - roomba.x;
         const dy = poop.y - roomba.y;
         const d = Math.sqrt(dx * dx + dy * dy);
         if (d < bestDist) { bestDist = d; bestTarget = { x: poop.x, y: poop.y }; }
       }
+
       if (getUpgradeLevel("roomba_skulls") >= 1) {
         for (const pet of petGame.pets) {
           if (pet.alive) continue;
@@ -781,8 +1258,7 @@ function petLoop(timestamp) {
       roomba.x += (rdx / rdist) * step;
       roomba.y += (rdy / rdist) * step;
     }
-    const rScaleX = rdx < -1 ? -1 : 1;
-    roomba.el.style.transform = `translate(${roomba.x}px, ${roomba.y}px) scaleX(${rScaleX})`;
+    roomba.scaleX = rdx < -1 ? -1 : 1;
 
     // Poop collision
     for (let i = petGame.poops.length - 1; i >= 0; i--) {
@@ -790,29 +1266,30 @@ function petLoop(timestamp) {
       const dx = (roomba.x + 10) - (poop.x + 10);
       const dy = (roomba.y + 10) - (poop.y + 10);
       if (Math.sqrt(dx * dx + dy * dy) < 20) {
-        poop.el.remove();
         petGame.poops.splice(i, 1);
-        addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now() });
+        const coinVal = Math.floor(getPoopCoinValue() * getRoombaCoinMult());
+        addToRecycleBin({ name: { first: "poop", last: String(Date.now()).slice(-6) }, timestamp: Date.now(), coinValue: coinVal });
         cureSickPets();
         break;
       }
     }
 
-    // Skull collision (if roomba_skulls owned)
+    // Skull collision
     if (getUpgradeLevel("roomba_skulls") >= 1) {
       for (const pet of [...petGame.pets]) {
         if (pet.alive) continue;
         const dx = (roomba.x + 10) - (pet.x + 10);
         const dy = (roomba.y + 10) - (pet.y + 10);
         if (Math.sqrt(dx * dx + dy * dy) < 20) {
-          dismissSkull(pet);
+          const coinVal = Math.floor(getSkullCoinValue() * getRoombaCoinMult());
+          dismissSkull(pet, coinVal);
           break;
         }
       }
     }
   }
 
-  // Items: gravity + landing
+  // Items: gravity + landing + fade
   for (const item of petGame.items) {
     if (item.consumed) continue;
 
@@ -827,19 +1304,27 @@ function petLoop(timestamp) {
         const wanted = petGame.pets.some((p) => p.alive && p.want === item.type);
         if (!wanted) {
           item.fadeTimer = setTimeout(() => {
-            item.el.classList.add("fading");
-            setTimeout(() => {
-              item.consumed = true;
-              item.el.remove();
-            }, 500);
+            item.fadeStart = performance.now();
           }, 3000);
         }
       }
-      item.el.style.transform = `translate(${item.x}px, ${item.y}px)`;
+    }
+
+    // Fade animation
+    if (item.fadeStart > 0) {
+      const fadeElapsed = performance.now() - item.fadeStart;
+      item.opacity = Math.max(0, 1 - fadeElapsed / 500);
+      if (item.opacity <= 0) {
+        item.consumed = true;
+      }
     }
   }
 
   petGame.items = petGame.items.filter((i) => !i.consumed);
+
+  // Render
+  renderPetGame(petGame.ctx, petGame.canvas.width, petGame.canvas.height);
+
   petGame.animationId = requestAnimationFrame(petLoop);
 }
 
@@ -848,7 +1333,6 @@ function stopPetGame() {
   if (petGame.animationId) cancelAnimationFrame(petGame.animationId);
   if (petGame.autoDispenseTimeout) clearTimeout(petGame.autoDispenseTimeout);
   if (petGame.upgradeListener) offUpgradeChange(petGame.upgradeListener);
-  for (const roomba of petGame.roombas) roomba.el.remove();
   for (const pet of petGame.pets) {
     if (pet.wantTimeout) clearTimeout(pet.wantTimeout);
     if (pet.ignoreTimeout) clearTimeout(pet.ignoreTimeout);
@@ -865,6 +1349,14 @@ export function launchEmojiGame() {
 
   const area = document.createElement("div");
   area.className = "pet-area";
+
+  const canvas = document.createElement("canvas");
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.display = "block";
+  canvas.style.imageRendering = "pixelated";
+  area.appendChild(canvas);
+
   body.appendChild(area);
 
   const btnGroup = document.createElement("div");
@@ -881,11 +1373,35 @@ export function launchEmojiGame() {
 
   body.appendChild(btnGroup);
 
-  // Auto-Dispenser speed selector row (visible when auto_dispense is owned)
+  // Auto-Dispenser speed selector row
   const dispenserRow = document.createElement("div");
   dispenserRow.className = "pet-dispenser-row";
   dispenserRow.style.display = "none";
   body.appendChild(dispenserRow);
+
+  const dispPrev = document.createElement("button");
+  dispPrev.textContent = "<";
+  dispPrev.addEventListener("click", () => {
+    playClick();
+    const s = getDispenseSpeed();
+    if (s > 0) setDispenseSpeed(s - 1);
+  });
+
+  const dispLabel = document.createElement("span");
+  dispLabel.className = "dispenser-label";
+
+  const dispNext = document.createElement("button");
+  dispNext.textContent = ">";
+  dispNext.addEventListener("click", () => {
+    playClick();
+    const maxSpeed = getUpgradeLevel("auto_dispense") * 3;
+    const s = getDispenseSpeed();
+    if (s < maxSpeed) setDispenseSpeed(s + 1);
+  });
+
+  dispenserRow.appendChild(dispPrev);
+  dispenserRow.appendChild(dispLabel);
+  dispenserRow.appendChild(dispNext);
 
   function updateDispenserRow() {
     const level = getUpgradeLevel("auto_dispense");
@@ -896,25 +1412,9 @@ export function launchEmojiGame() {
     dispenserRow.style.display = "flex";
     const maxSpeed = level * 3;
     const currentSpeed = getDispenseSpeed();
-    const needed = maxSpeed + 2; // label + buttons
-    if (dispenserRow.children.length !== needed) {
-      dispenserRow.innerHTML = "";
-      const label = document.createElement("span");
-      label.textContent = "Auto:";
-      label.style.fontSize = "9px";
-      label.style.alignSelf = "center";
-      dispenserRow.appendChild(label);
-      for (let s = 0; s <= maxSpeed; s++) {
-        const sBtn = document.createElement("button");
-        sBtn.textContent = DISPENSE_LABELS[s];
-        sBtn.addEventListener("click", () => { playClick(); setDispenseSpeed(s); });
-        dispenserRow.appendChild(sBtn);
-      }
-    }
-    // Update active state (skip label at index 0)
-    for (let i = 1; i < dispenserRow.children.length; i++) {
-      dispenserRow.children[i].classList.toggle("active", (i - 1) === currentSpeed);
-    }
+    dispLabel.textContent = `Auto: ${DISPENSE_LABELS[currentSpeed]}`;
+    dispPrev.disabled = currentSpeed <= 0;
+    dispNext.disabled = currentSpeed >= maxSpeed;
   }
 
   const entry = createWindow("emoji-game", "Emoji Pet", body, {
@@ -935,23 +1435,33 @@ export function launchEmojiGame() {
   statusBar.innerHTML = '<p class="status-bar-field">Pets: 1</p>';
   entry.element.appendChild(statusBar);
 
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
   const areaW = area.clientWidth || 310;
   const areaH = area.clientHeight || 220;
+  canvas.width = areaW;
+  canvas.height = areaH;
 
   petGame = {
     area,
+    canvas,
+    ctx,
     statusBar,
     items: [],
     pets: [],
     poops: [],
     animationId: null,
     prevTimestamp: 0,
-    splitTimer: 30000,
     poopTimer: POOP_TICK_INTERVAL,
     roombas: [],
+    poopGrid: new SpatialGrid(POOP_PROXIMITY),
+    dragging: false,
   };
 
-  const firstPet = createPet(area, areaW / 2 - PET_SIZE / 2, areaH / 2 - PET_SIZE / 2);
+  setupCanvasInput(canvas);
+
+  const firstPet = createPet(areaW / 2 - PET_SIZE / 2, areaH / 2 - PET_SIZE / 2);
   petGame.pets.push(firstPet);
   scheduleNextWant(firstPet);
 
@@ -964,26 +1474,26 @@ export function launchEmojiGame() {
         btn.disabled = inventory[type] === 0;
       }
     });
+    updatePetStatus();
   };
   onInventoryChange(petGame.inventoryListener);
 
-  entry.onResize = debounce(checkPetPopulationCap, 200);
+  entry.onResize = debounce(() => {
+    resizeCanvas();
+    checkPetPopulationCap();
+  }, 200);
   petGame.animationId = requestAnimationFrame(petLoop);
 
-  // Spawn visual roombas
   spawnRoombas();
 
-  // Auto-Dispenser: recursive setTimeout, reads dispenseSpeed setting each tick
+  // Auto-Dispenser
   function autoDispenseTick() {
     if (!petGame) return;
     const speed = getDispenseSpeed();
     if (speed < 1) { petGame.autoDispenseTimeout = null; return; }
-    const wanting = petGame.pets.filter((p) => p.alive && p.want);
-    if (wanting.length > 0) {
-      const pet = wanting[0];
-      if (inventory[pet.want] > 0) {
-        dropItem(pet.want);
-      }
+    const type = ITEM_TYPES[Math.floor(Math.random() * ITEM_TYPES.length)];
+    if (inventory[type] > 0) {
+      dropItem(type);
     }
     petGame.autoDispenseTimeout = setTimeout(autoDispenseTick, DISPENSE_INTERVALS[speed]);
   }
@@ -1000,7 +1510,6 @@ export function launchEmojiGame() {
   restartAutoDispense();
   updateDispenserRow();
 
-  // Listen for upgrade/speed changes so auto-dispense restarts with new interval
   petGame.upgradeListener = onUpgradeChange(() => {
     restartAutoDispense();
     updateDispenserRow();
@@ -1018,7 +1527,12 @@ export function isPetGameOpen() {
   return petGame !== null;
 }
 
-export { killPet };
+export { killPet, grindPet };
+
+export function getAllPets() {
+  if (!petGame) return [];
+  return petGame.pets;
+}
 
 // Register accessor so upgrades.js can call these without circular imports
-registerPetAccessor({ getLivingPets, killPet, isPetGameOpen });
+registerPetAccessor({ getLivingPets, killPet, isPetGameOpen, grindPet, getAllPets });

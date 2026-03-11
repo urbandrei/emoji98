@@ -2,6 +2,7 @@
 
 import { playWindowOpen, playWindowClose } from "./sounds.js";
 import { getUpgradeLevel, onUpgradeChange, offUpgradeChange } from "./upgrades.js";
+import { toLayoutX, toLayoutY } from "./scaling.js";
 
 const windowManager = {
   windows: [],
@@ -199,15 +200,15 @@ function makeDraggable(winEl, entry) {
     if (e.target.closest(".title-bar-controls")) return;
     if (entry.maximized) return;
     dragging = true;
-    offsetX = e.clientX - winEl.offsetLeft;
-    offsetY = e.clientY - winEl.offsetTop;
+    offsetX = toLayoutX(e.clientX) - winEl.offsetLeft;
+    offsetY = toLayoutY(e.clientY) - winEl.offsetTop;
     e.preventDefault();
   });
 
   document.addEventListener("mousemove", (e) => {
     if (!dragging) return;
-    winEl.style.left = (e.clientX - offsetX) + "px";
-    winEl.style.top = (e.clientY - offsetY) + "px";
+    winEl.style.left = (toLayoutX(e.clientX) - offsetX) + "px";
+    winEl.style.top = (toLayoutY(e.clientY) - offsetY) + "px";
   });
 
   document.addEventListener("mouseup", () => {
@@ -242,8 +243,8 @@ function makeResizable(winEl, entry) {
       e.preventDefault();
       e.stopPropagation();
       resizing = true;
-      startX = e.clientX;
-      startY = e.clientY;
+      startX = toLayoutX(e.clientX);
+      startY = toLayoutY(e.clientY);
       startLeft = winEl.offsetLeft;
       startTop = winEl.offsetTop;
       startW = winEl.offsetWidth;
@@ -252,8 +253,8 @@ function makeResizable(winEl, entry) {
 
     document.addEventListener("mousemove", (e) => {
       if (!resizing) return;
-      const dx = e.clientX - startX;
-      const dy = e.clientY - startY;
+      const dx = toLayoutX(e.clientX) - startX;
+      const dy = toLayoutY(e.clientY) - startY;
 
       let newW = startW;
       let newH = startH;

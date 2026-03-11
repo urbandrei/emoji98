@@ -1,0 +1,5 @@
+You got your first emoji!
+
+It'll show 💭 when it wants something.
+
+Use the buttons at the bottom to drop 🍔, 💧, or ⚽. Try it now!

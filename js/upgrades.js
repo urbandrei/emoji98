@@ -4,36 +4,41 @@ import { inventory, setSaveCallback } from "./inventory.js";
 
 // Upgrade definitions
 export const UPGRADES = {
-  // Tiered (3 levels) - Core
-  bucket_size:    { name: "Bigger Buckets",   emoji: "1faa3",  costs: [2, 8, 25],   maxLevel: 3, desc: "Wider bucket in Water Plant" },
-  speed_boots:    { name: "Speed Boots",      emoji: "1f45f",  costs: [2, 9, 28],   maxLevel: 3, desc: "Pets walk faster toward wanted items" },
-  farm_speed:     { name: "Turbo Tractor",    emoji: "1f69c",  costs: [3, 10, 30],  maxLevel: 3, desc: "Faster auto-farming" },
-  poop_immunity:  { name: "Poop Immunity",    emoji: "1f48a",  costs: [3, 10, 32],  maxLevel: 3, desc: "Pets take longer to get sick from poop" },
-  belt_speed:     { name: "Faster Belts",     emoji: "2699",   costs: [3, 11, 33],  maxLevel: 3, desc: "Speed up factory conveyor" },
-  patience:       { name: "Zen Training",     emoji: "1f9d8",  costs: [4, 12, 35],  maxLevel: 3, desc: "Pets tolerate missed wants longer" },
-  rain_rate:      { name: "Rainmaker",        emoji: "1f327",  costs: [4, 13, 38],  maxLevel: 3, desc: "More water drops spawn" },
-  toy_luck:       { name: "Quality Control",  emoji: "1f3b0",  costs: [4, 13, 36],  maxLevel: 3, desc: "Selected toys stay common longer" },
-  larger_farm:    { name: "Larger Farm",      emoji: "1f33b",  costs: [4, 14, 40],  maxLevel: 3, desc: "Denser farm grid, more slots" },
-  golden_harvest: { name: "Golden Harvest",   emoji: "1f31f",  costs: [5, 15, 42],  maxLevel: 3, desc: "Farm tiles chance to yield 2x food" },
-  double_catch:   { name: "Double Catch",     emoji: "1f30a",  costs: [5, 16, 45],  maxLevel: 3, desc: "Water drops give extra water" },
-  pet_cap:        { name: "Zoning Permit",    emoji: "1f3d7",  costs: [5, 18, 50],  maxLevel: 3, desc: "Fit more pets in area" },
-  combo_bonus:    { name: "Combo Bonus",      emoji: "1f525",  costs: [5, 16, 48],  maxLevel: 3, desc: "Factory streaks above 5 give bonus toys" },
-  reproduction:   { name: "Fertility Boost",  emoji: "1f495",  costs: [6, 20, 55],  maxLevel: 3, desc: "Pets split more often" },
-  lucky_drops:    { name: "Lucky Drops",      emoji: "1f48e",  costs: [6, 20, 58],  maxLevel: 3, desc: "Chance for golden drops worth 3 water" },
-  // One-time / Tiered
-  window_resize:  { name: "Window Resize",    emoji: "1f5d6",  costs: [3],          maxLevel: 1, desc: "Unlock window resize and maximize" },
-  multi_grab:     { name: "Multi-Grab",       emoji: "1f9f9",  costs: [5, 14, 35],  maxLevel: 3, desc: "Drag to bin: collects nearby poop/skulls too" },
-  poop_magnet:    { name: "Poop Magnet",      emoji: "1f9f2",  costs: [7],          maxLevel: 1, desc: "Poop spawns only in corners" },
-  active_deselected: { name: "Active Background", emoji: "1f4f1", costs: [8],       maxLevel: 1, desc: "Games run when window is unfocused" },
-  auto_plant:     { name: "Auto-Plant",       emoji: "1f504",  costs: [8],          maxLevel: 1, desc: "Farm auto-plants empty tiles" },
-  auto_dispense:  { name: "Auto-Dispenser",   emoji: "1f4e6",  costs: [10, 28, 65], maxLevel: 3, desc: "Auto-drops items for wanting pets" },
-  roomba:         { name: "Roomba",           emoji: "1f916",  costs: [12, 30, 60], maxLevel: 3, desc: "Roombas wander and eat poop" },
-  roomba_radar:   { name: "Roomba Radar",     emoji: "1f4e1",  costs: [15, 35, 70], maxLevel: 3, desc: "Roombas detect nearby poop/skulls" },
-  roomba_skulls:  { name: "Roomba Skulls",    emoji: "1f480",  costs: [18],         maxLevel: 1, desc: "Roombas also pick up skulls" },
-  active_minimized: { name: "Active Minimized", emoji: "1f4e5", costs: [20],        maxLevel: 1, desc: "Games run even when minimized" },
-  infinite_farm:  { name: "Infinite Farm",    emoji: "1f30d",  costs: [35],         maxLevel: 1, desc: "Farm grid expands massively" },
-  prestige:       { name: "Prestige System",  emoji: "2728",   costs: [80],         maxLevel: 1, desc: "Reset upgrades for permanent 2x boost" },
-  win_game:       { name: "The Great Escape", emoji: "1f389",  costs: [100],        maxLevel: 1, desc: "???" },
+  // Early game (1–20 coin)
+  window_resize:  { name: "Window Resize",    emoji: "1f5d6",  costs: [300],                     maxLevel: 1, desc: "Unlock window resize and maximize" },
+  speed_boots:    { name: "Speed Boots",      emoji: "1f45f",  costs: [3, 25, 400],              maxLevel: 3, desc: "Pets walk faster toward wanted items" },
+  bucket_size:    { name: "Bigger Buckets",   emoji: "1faa3",  costs: [5, 50, 600],              maxLevel: 3, desc: "Wider bucket in Water Plant" },
+  poop_coin:      { name: "Poop Value",       emoji: "1f4b0",  costs: [8, 80, 1200],             maxLevel: 3, desc: "Poop worth more coin" },
+  roomba:         { name: "Roomba",           emoji: "1f916",  costs: [100, 300, 1000],          maxLevel: 3, desc: "Roombas wander and eat poop" },
+  poop_immunity:  { name: "Poop Immunity",    emoji: "1f48a",  costs: [12, 120, 2000],           maxLevel: 3, desc: "Pets take longer to get sick from poop" },
+  // Mid-early (20–200 coin)
+  patience:       { name: "Zen Training",     emoji: "1f9d8",  costs: [20, 200, 3000],           maxLevel: 3, desc: "Pets tolerate missed wants longer" },
+  tractor:        { name: "Tractor",           emoji: "1f69c",  costs: [25, 250, 4000],           maxLevel: 3, desc: "Tractor auto-farms: plant → water → harvest" },
+  rain_rate:      { name: "Rainmaker",        emoji: "1f327",  costs: [30, 300, 5000],           maxLevel: 3, desc: "More water drops spawn" },
+  belt_speed:     { name: "Faster Belts",     emoji: "2699",   costs: [35, 350, 5500],           maxLevel: 3, desc: "Speed up factory conveyor" },
+  multi_grab:     { name: "Multi-Grab",       emoji: "1f9f9",  costs: [20, 200, 3000],           maxLevel: 3, desc: "Drag to bin: collects nearby poop/skulls too" },
+  poop_magnet:    { name: "Poop Magnet",      emoji: "1f9f2",  costs: [50],                      maxLevel: 1, desc: "Poop spawns only in corners" },
+  skull_coin:     { name: "Skull Value",      emoji: "1f4b0",  costs: [60, 600, 8000],           maxLevel: 3, desc: "Skulls worth more coin" },
+  pet_roster:     { name: "Pet Roster",      emoji: "1f4cb",  costs: [75],                      maxLevel: 1, desc: "Unlock the Pet Roster app" },
+  // Mid game (200–2000 coin)
+  toy_luck:       { name: "Quality Control",  emoji: "1f3b0",  costs: [200, 2000, 20000],        maxLevel: 3, desc: "Selected toys stay common longer" },
+  larger_farm:    { name: "Larger Farm",      emoji: "1f33b",  costs: [250, 2500, 25000],        maxLevel: 3, desc: "Denser farm grid, more slots" },
+  tractor_speed:  { name: "Tractor Speed",     emoji: "1f3ce",  costs: [300, 3000, 25000],        maxLevel: 3, desc: "Faster tractors, more tractors" },
+  roomba_radar:   { name: "Roomba Radar",     emoji: "1f4e1",  costs: [350, 3500, 30000],        maxLevel: 3, desc: "Roombas detect nearby poop/skulls" },
+  golden_harvest: { name: "Golden Harvest",   emoji: "1f31f",  costs: [400, 4000, 35000],        maxLevel: 3, desc: "Farm tiles chance to yield 2x food" },
+  double_catch:   { name: "Double Catch",     emoji: "1f30a",  costs: [500, 5000, 40000],        maxLevel: 3, desc: "Water drops give extra water" },
+  roomba_skulls:  { name: "Roomba Skulls",    emoji: "1f480",  costs: [200],                     maxLevel: 1, desc: "Roombas also pick up skulls" },
+  roster_grind:   { name: "Pet Grinder",     emoji: "1fa78",  costs: [500],                     maxLevel: 1, desc: "Unlock Grind button in Pet Roster" },
+  roomba_coin:    { name: "Roomba Profit",    emoji: "1f4b0",  costs: [800, 6000, 45000],        maxLevel: 3, desc: "Roomba cleanup earns more coin" },
+  // Late game (2000–20000 coin)
+  pet_cap:        { name: "Zoning Permit",    emoji: "1f3d7",  costs: [2000, 15000, 60000],      maxLevel: 3, desc: "Fit more pets in area" },
+  combo_bonus:    { name: "Combo Bonus",      emoji: "1f525",  costs: [2500, 18000, 65000],      maxLevel: 3, desc: "Factory streaks above 5 give bonus toys" },
+  reproduction:   { name: "Fertility Boost",  emoji: "1f495",  costs: [3000, 20000, 70000],      maxLevel: 3, desc: "Pets need fewer feedings to multiply" },
+  auto_dispense:  { name: "Auto-Dispenser",   emoji: "1f4e6",  costs: [5000, 25000, 75000],      maxLevel: 3, desc: "Auto-drops items for wanting pets" },
+  lucky_drops:    { name: "Lucky Drops",      emoji: "1f48e",  costs: [8000, 35000, 80000],      maxLevel: 3, desc: "Chance for golden drops worth 3 water" },
+  // End game (20000–100000 coin)
+  infinite_farm:  { name: "Infinite Farm",    emoji: "1f30d",  costs: [50000],                   maxLevel: 1, desc: "Farm grid expands massively" },
+  win_game:       { name: "The Great Escape", emoji: "1f389",  costs: [100000],                  maxLevel: 1, desc: "???" },
 };
 
 const UPGRADE_IDS = Object.keys(UPGRADES);
@@ -104,33 +109,20 @@ export function setDispenseSpeed(speed) {
 }
 
 export function getPrestigeMultiplier() {
-  return 1 + upgradeState.prestigeCount;
+  return 1;
 }
 
 export function canAffordUpgrade(id) {
   if (isMaxed(id)) return false;
-  if (!petAccessor || !petAccessor.isPetGameOpen()) return false;
   const cost = getUpgradeCost(id);
-  const living = petAccessor.getLivingPets();
-  return living.length >= cost;
+  return inventory.coin >= cost;
 }
 
 export function purchaseUpgrade(id) {
   if (!canAffordUpgrade(id)) return false;
   const cost = getUpgradeCost(id);
 
-  // Kill most-neglected pets
-  for (let i = 0; i < cost; i++) {
-    const living = petAccessor.getLivingPets();
-    if (living.length === 0) break;
-    // Sort by most neglected (highest missedWants first, then oldest)
-    living.sort((a, b) => {
-      if (b.missedWants !== a.missedWants) return b.missedWants - a.missedWants;
-      return 0;
-    });
-    petAccessor.killPet(living[0]);
-  }
-
+  inventory.coin -= cost;
   upgradeState.levels[id] = (upgradeState.levels[id] || 0) + 1;
   upgradeState.totalSacrificed += cost;
   notifyUpgradeChange();
@@ -140,26 +132,7 @@ export function purchaseUpgrade(id) {
     import("./win-sequence.js").then((mod) => mod.startWinSequence());
   }
 
-  if (id === "prestige") {
-    doPrestige();
-  }
-
   return true;
-}
-
-function doPrestige() {
-  upgradeState.prestigeCount++;
-  // Reset all upgrade levels except win_game
-  for (const id of UPGRADE_IDS) {
-    if (id === "win_game") continue;
-    upgradeState.levels[id] = 0;
-  }
-  upgradeState.dispenseSpeed = 0;
-  inventory.food = 3;
-  inventory.water = 3;
-  inventory.play = 3;
-  notifyUpgradeChange();
-  saveState();
 }
 
 // Generate flat list of upgrade slots for shop display
@@ -205,9 +178,9 @@ const SAVE_KEY = "emoji98_save";
 
 export function saveState() {
   const data = {
-    version: 2,
+    version: 3,
     upgradeLevels: { ...upgradeState.levels },
-    inventory: { food: inventory.food, water: inventory.water, play: inventory.play },
+    inventory: { food: inventory.food, water: inventory.water, play: inventory.play, coin: inventory.coin },
     totalSacrificed: upgradeState.totalSacrificed,
     dispenseSpeed: upgradeState.dispenseSpeed,
     prestigeCount: upgradeState.prestigeCount,
@@ -224,7 +197,7 @@ export function loadState() {
     const raw = localStorage.getItem(SAVE_KEY);
     if (!raw) return;
     const data = JSON.parse(raw);
-    if (data.version !== 1 && data.version !== 2) return;
+    if (data.version !== 1 && data.version !== 2 && data.version !== 3) return;
 
     // Restore upgrade levels
     if (data.upgradeLevels) {
@@ -240,6 +213,7 @@ export function loadState() {
       if (typeof data.inventory.food === "number") inventory.food = data.inventory.food;
       if (typeof data.inventory.water === "number") inventory.water = data.inventory.water;
       if (typeof data.inventory.play === "number") inventory.play = data.inventory.play;
+      if (typeof data.inventory.coin === "number") inventory.coin = data.inventory.coin;
     }
 
     if (typeof data.totalSacrificed === "number") {
@@ -283,5 +257,6 @@ export function clearSave() {
   inventory.food = 3;
   inventory.water = 3;
   inventory.play = 3;
+  inventory.coin = 0;
   notifyUpgradeChange();
 }

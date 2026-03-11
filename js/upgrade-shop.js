@@ -2,9 +2,10 @@
 
 import { createWindow } from "./window-manager.js";
 import { pixelateEmoji } from "./emoji-utils.js";
+import { inventory } from "./inventory.js";
 import {
   upgradeState, getUpgradeLevel, isMaxed, canAffordUpgrade, purchaseUpgrade,
-  onUpgradeChange, offUpgradeChange, getPetAccessor,
+  onUpgradeChange, offUpgradeChange, UPGRADES,
   getDispenseSpeed, setDispenseSpeed, DISPENSE_LABELS,
   getUpgradeSlots, getPrestigeMultiplier,
 } from "./upgrades.js";
@@ -18,125 +19,47 @@ function stopShop() {
   if (shopChangeListener) { offUpgradeChange(shopChangeListener); shopChangeListener = null; }
 }
 
-const ITEMS_PER_PAGE = 5;
-
 export function launchUpgradeShop() {
   const body = document.createElement("div");
   body.className = "shop-app";
-
-  // Warning banner
-  const warning = document.createElement("div");
-  warning.className = "shop-warning";
-  warning.textContent = "Open Emoji Pet first to buy upgrades!";
-  body.appendChild(warning);
 
   // Status bar at top
   const status = document.createElement("div");
   status.className = "shop-status";
   body.appendChild(status);
 
-  // Tab bar for Available / Purchased
-  const tabBar = document.createElement("div");
-  tabBar.className = "shop-tab-bar";
-
-  const availableTab = document.createElement("button");
-  availableTab.className = "shop-tab active";
-  availableTab.textContent = "Available";
-  tabBar.appendChild(availableTab);
-
-  const purchasedTab = document.createElement("button");
-  purchasedTab.className = "shop-tab";
-  purchasedTab.textContent = "Purchased";
-  tabBar.appendChild(purchasedTab);
-
-  body.appendChild(tabBar);
-
   // Scrollable list
   const list = document.createElement("div");
   list.className = "shop-list";
   body.appendChild(list);
 
-  // Pagination
-  const pagination = document.createElement("div");
-  pagination.className = "shop-pagination";
-
-  const prevBtn = document.createElement("button");
-  prevBtn.textContent = "< Prev";
-  prevBtn.addEventListener("click", () => { playClick(); currentPage--; updateShop(); });
-  pagination.appendChild(prevBtn);
-
-  const pageInfo = document.createElement("span");
-  pageInfo.className = "shop-page-info";
-  pagination.appendChild(pageInfo);
-
-  const nextBtn = document.createElement("button");
-  nextBtn.textContent = "Next >";
-  nextBtn.addEventListener("click", () => { playClick(); currentPage++; updateShop(); });
-  pagination.appendChild(nextBtn);
-
-  body.appendChild(pagination);
-
-  let currentPage = 0;
-  let showPurchased = false;
-
-  availableTab.addEventListener("click", () => {
-    playClick();
-    showPurchased = false;
-    currentPage = 0;
-    availableTab.classList.add("active");
-    purchasedTab.classList.remove("active");
-    updateShop();
-  });
-
-  purchasedTab.addEventListener("click", () => {
-    playClick();
-    showPurchased = true;
-    currentPage = 0;
-    purchasedTab.classList.add("active");
-    availableTab.classList.remove("active");
-    updateShop();
-  });
-
   function updateShop() {
-    const accessor = getPetAccessor();
-    const petOpen = accessor && accessor.isPetGameOpen();
-    const livingCount = petOpen ? accessor.getLivingPets().length : 0;
     const prestigeMult = getPrestigeMultiplier();
 
-    warning.style.display = petOpen ? "none" : "block";
-    let statusText = `Living Pets: ${livingCount} | Sacrificed: ${upgradeState.totalSacrificed}`;
+    // Count owned upgrades
+    const allSlots = getUpgradeSlots();
+    const ownedCount = allSlots.filter(s => getUpgradeLevel(s.id) > s.tier).length;
+    const totalCount = allSlots.length;
+
+    let statusText = `Coin: ${inventory.coin} | Owned: ${ownedCount}/${totalCount}`;
     if (prestigeMult > 1) statusText += ` | Prestige: ${prestigeMult}x`;
     status.textContent = statusText;
 
-    const allSlots = getUpgradeSlots();
-
-    let displaySlots;
-    if (showPurchased) {
-      // Show all tiers that have been purchased
-      displaySlots = allSlots.filter(s => getUpgradeLevel(s.id) > s.tier);
-    } else {
-      // Show the next unpurchased tier for each upgrade (prerequisite: previous tier owned)
-      displaySlots = allSlots.filter(s => getUpgradeLevel(s.id) === s.tier);
-    }
-
-    const totalPages = Math.max(1, Math.ceil(displaySlots.length / ITEMS_PER_PAGE));
-    if (currentPage >= totalPages) currentPage = totalPages - 1;
-    if (currentPage < 0) currentPage = 0;
-
-    const startIdx = currentPage * ITEMS_PER_PAGE;
-    const pageSlots = displaySlots.slice(startIdx, startIdx + ITEMS_PER_PAGE);
+    // Show the 5 cheapest available upgrades
+    const availableSlots = allSlots.filter(s => getUpgradeLevel(s.id) === s.tier);
+    const visibleSlots = availableSlots.slice(0, 5);
 
     // Clear list
     list.innerHTML = "";
 
-    if (pageSlots.length === 0) {
+    if (visibleSlots.length === 0) {
       const empty = document.createElement("div");
       empty.className = "shop-empty";
-      empty.textContent = showPurchased ? "No upgrades purchased yet." : "All upgrades purchased!";
+      empty.textContent = "All upgrades purchased!";
       list.appendChild(empty);
     }
 
-    for (const slot of pageSlots) {
+    for (const slot of visibleSlots) {
       const item = document.createElement("div");
       item.className = "shop-item";
 
@@ -161,29 +84,22 @@ export function launchUpgradeShop() {
 
       item.appendChild(info);
 
-      if (showPurchased) {
-        const ownedEl = document.createElement("div");
-        ownedEl.className = "shop-item-cost shop-maxed";
-        ownedEl.textContent = "Owned";
-        item.appendChild(ownedEl);
-      } else {
-        const costEl = document.createElement("div");
-        costEl.className = "shop-item-cost";
-        costEl.textContent = `${slot.cost} pet${slot.cost !== 1 ? "s" : ""}`;
-        item.appendChild(costEl);
+      const costEl = document.createElement("div");
+      costEl.className = "shop-item-cost";
+      costEl.textContent = `${slot.cost} coin`;
+      item.appendChild(costEl);
 
-        const btn = document.createElement("button");
-        btn.className = "shop-buy-btn";
-        btn.textContent = "Buy";
-        btn.disabled = !petOpen || livingCount < slot.cost;
-        btn.addEventListener("click", () => {
-          playClick();
-          if (purchaseUpgrade(slot.id)) {
-            playPurchase();
-          }
-        });
-        item.appendChild(btn);
-      }
+      const btn = document.createElement("button");
+      btn.className = "shop-buy-btn";
+      btn.textContent = "Buy";
+      btn.disabled = inventory.coin < slot.cost;
+      btn.addEventListener("click", () => {
+        playClick();
+        if (purchaseUpgrade(slot.id)) {
+          playPurchase();
+        }
+      });
+      item.appendChild(btn);
 
       list.appendChild(item);
 
@@ -204,12 +120,6 @@ export function launchUpgradeShop() {
         list.appendChild(speedSelector);
       }
     }
-
-    // Update pagination
-    prevBtn.disabled = currentPage === 0;
-    nextBtn.disabled = currentPage >= totalPages - 1;
-    pageInfo.textContent = `${currentPage + 1} / ${totalPages}`;
-    pagination.style.display = totalPages <= 1 ? "none" : "flex";
   }
 
   const entry = createWindow("upgrade-shop", "Upgrade Shop", body, {
@@ -225,7 +135,7 @@ export function launchUpgradeShop() {
 
   updateShop();
 
-  // Poll pet count
+  // Poll coin balance
   shopInterval = setInterval(updateShop, 500);
 
   // Subscribe to upgrade changes

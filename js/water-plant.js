@@ -1,55 +1,61 @@
 // ========== Water Plant ==========
 
-import { pixelateEmoji } from "./index.js";
+import { getSpriteImage } from "./index.js";
 import { inventory, addInventory, onInventoryChange, offInventoryChange } from "./index.js";
 import { createWindow } from "./index.js";
 import { debounce } from "./index.js";
 import { playWater } from "./sounds.js";
 import { getUpgradeLevel, getPrestigeMultiplier } from "./upgrades.js";
-import { isWindowActive, isWindowMinimized } from "./window-manager.js";
+
 
 const LERP_SPEED = 12;
 
 let waterGame = null;
 
-async function spawnDrop() {
+function spawnDrop() {
   if (!waterGame) return;
-  const area = waterGame.area;
-  const areaW = area.clientWidth;
-  const dropEl = document.createElement("img");
-  dropEl.className = "water-drop";
-  const src = await pixelateEmoji("1f4a7");
-  dropEl.src = src;
-  dropEl.draggable = false;
+  const areaW = waterGame.canvas.width;
   const x = Math.random() * (areaW - 20);
-  dropEl.style.left = x + "px";
-  dropEl.style.top = "-20px";
-  area.appendChild(dropEl);
-  waterGame.drops.push({ el: dropEl, x, y: -20 });
+  waterGame.drops.push({ x, y: -20 });
+}
+
+function renderWaterGame(ctx, w, h) {
+  ctx.clearRect(0, 0, w, h);
+  ctx.fillStyle = "#2c3e50";
+  ctx.fillRect(0, 0, w, h);
+
+  // Draw drops
+  for (const drop of waterGame.drops) {
+    const img = getSpriteImage("1f4a7");
+    if (img) ctx.drawImage(img, drop.x, drop.y, 20, 20);
+  }
+
+  // Draw bucket
+  const bucketImg = getSpriteImage("1faa3");
+  const bucketWidth = [30, 45, 65, 90][getUpgradeLevel("bucket_size")];
+  const bucketY = h - 32;
+  if (bucketImg) ctx.drawImage(bucketImg, waterGame.bucketX, bucketY, bucketWidth, 24);
 }
 
 function waterLoop(timestamp) {
   if (!waterGame) return;
 
-  // Pause logic
-  const minimized = isWindowMinimized("water-plant");
-  const active = isWindowActive("water-plant");
-  const shouldPause = minimized
-    ? getUpgradeLevel("active_minimized") < 1
-    : (!active && getUpgradeLevel("active_deselected") < 1);
-  if (shouldPause) {
-    waterGame.prevTimestamp = 0;
-    waterGame.animationId = requestAnimationFrame(waterLoop);
-    return;
-  }
 
   const elapsed = waterGame.prevTimestamp ? timestamp - waterGame.prevTimestamp : 16.667;
   waterGame.prevTimestamp = timestamp;
 
-  const areaH = waterGame.area.clientHeight;
   const areaW = waterGame.area.clientWidth;
+  const areaH = waterGame.area.clientHeight;
+
+  // Resize canvas if needed
+  if (waterGame.canvas.width !== areaW || waterGame.canvas.height !== areaH) {
+    waterGame.canvas.width = areaW;
+    waterGame.canvas.height = areaH;
+    waterGame.ctx.imageSmoothingEnabled = false;
+  }
+
   const bucketY = areaH - 32;
-  const speed = 2;
+  const speed = 1;
 
   // Lerp bucket toward target position
   const dt = elapsed / 1000;
@@ -59,33 +65,26 @@ function waterLoop(timestamp) {
   } else {
     waterGame.bucketX = waterGame.targetBucketX;
   }
-  waterGame.bucketImg.style.left = waterGame.bucketX + "px";
 
-  // Apply bucket width from upgrade
   const bucketWidth = [30, 45, 65, 90][getUpgradeLevel("bucket_size")];
-  waterGame.bucketImg.style.width = bucketWidth + "px";
 
   waterGame.spawnTimer -= elapsed;
   if (waterGame.spawnTimer <= 0) {
     spawnDrop();
-    const baseInterval = 800 + Math.random() * 700;
-    const rainMult = [1.0, 0.65, 0.4, 0.2][getUpgradeLevel("rain_rate")];
+    const baseInterval = 2000 + Math.random() * 1500;
+    const rainMult = [1.0, 0.6, 0.35, 0.15][getUpgradeLevel("rain_rate")];
     waterGame.spawnTimer = baseInterval * (300 / Math.max(areaW, 100)) * rainMult;
   }
 
   for (let i = waterGame.drops.length - 1; i >= 0; i--) {
     const drop = waterGame.drops[i];
     drop.y += speed * (elapsed / 16.667);
-    drop.el.style.top = drop.y + "px";
 
     if (drop.y + 20 >= bucketY && drop.y <= bucketY + 24) {
       if (drop.x + 10 >= waterGame.bucketX && drop.x + 10 <= waterGame.bucketX + bucketWidth) {
-        drop.el.remove();
         waterGame.drops.splice(i, 1);
-        // Double Catch: extra water per drop
         const doubleCatchLevel = getUpgradeLevel("double_catch");
         let waterAmount = [1, 2, 3, 4][doubleCatchLevel];
-        // Lucky Drops: chance for bonus 3 water
         const luckyLevel = getUpgradeLevel("lucky_drops");
         const luckyChance = [0, 0.1, 0.2, 0.3][luckyLevel];
         if (Math.random() < luckyChance) waterAmount += 3;
@@ -96,10 +95,12 @@ function waterLoop(timestamp) {
     }
 
     if (drop.y > areaH) {
-      drop.el.remove();
       waterGame.drops.splice(i, 1);
     }
   }
+
+  // Render
+  renderWaterGame(waterGame.ctx, waterGame.canvas.width, waterGame.canvas.height);
 
   waterGame.animationId = requestAnimationFrame(waterLoop);
 }
@@ -111,19 +112,19 @@ function stopWaterPlant() {
   waterGame = null;
 }
 
-export async function launchWaterPlant() {
+export function launchWaterPlant() {
   const body = document.createElement("div");
   body.className = "water-app";
 
   const area = document.createElement("div");
   area.className = "water-area";
 
-  const bucketImg = document.createElement("img");
-  bucketImg.className = "water-bucket";
-  const bucketSrc = await pixelateEmoji("1faa3");
-  bucketImg.src = bucketSrc;
-  bucketImg.draggable = false;
-  area.appendChild(bucketImg);
+  const canvas = document.createElement("canvas");
+  canvas.style.width = "100%";
+  canvas.style.height = "100%";
+  canvas.style.display = "block";
+  canvas.style.imageRendering = "pixelated";
+  area.appendChild(canvas);
 
   body.appendChild(area);
 
@@ -152,11 +153,19 @@ export async function launchWaterPlant() {
   statusBar.innerHTML = `<p class="status-bar-field">Water supply: ${inventory.water}</p>`;
   entry.element.appendChild(statusBar);
 
+  const ctx = canvas.getContext("2d");
+  ctx.imageSmoothingEnabled = false;
+
   const areaW = area.clientWidth || 260;
+  const areaH = area.clientHeight || 260;
+  canvas.width = areaW;
+  canvas.height = areaH;
+
   const startX = areaW / 2 - 15;
   waterGame = {
     area,
-    bucketImg,
+    canvas,
+    ctx,
     bucketX: startX,
     targetBucketX: startX,
     slider,
@@ -167,11 +176,9 @@ export async function launchWaterPlant() {
     statusBar,
   };
 
-  bucketImg.style.left = waterGame.bucketX + "px";
-
   slider.addEventListener("input", () => {
     if (!waterGame) return;
-    const areaW = waterGame.area.clientWidth;
+    const areaW = waterGame.canvas.width;
     const bw = [30, 45, 65, 90][getUpgradeLevel("bucket_size")];
     waterGame.targetBucketX = (slider.value / 1000) * (areaW - bw);
   });
@@ -182,7 +189,6 @@ export async function launchWaterPlant() {
     const bw = [30, 45, 65, 90][getUpgradeLevel("bucket_size")];
     waterGame.bucketX = Math.min(waterGame.bucketX, areaW - bw);
     waterGame.targetBucketX = Math.min(waterGame.targetBucketX, areaW - bw);
-    waterGame.bucketImg.style.left = waterGame.bucketX + "px";
     waterGame.slider.value = (waterGame.targetBucketX / (areaW - bw)) * 1000;
   }, 100);
 

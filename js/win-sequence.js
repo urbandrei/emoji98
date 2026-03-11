@@ -4,6 +4,7 @@ import { pixelateEmoji } from "./emoji-utils.js";
 import { closeWindow } from "./window-manager.js";
 import { clearSave } from "./upgrades.js";
 import { playBSOD } from "./sounds.js";
+import { getLayoutWidth } from "./scaling.js";
 
 const FACE_CODEPOINTS = ["1f600", "1f60a", "1f622", "1f921", "1f60e", "1f917", "1f92a", "1f60d"];
 
@@ -33,11 +34,11 @@ export async function startWinSequence() {
     img.draggable = false;
     img.style.width = (20 + Math.random() * 24) + "px";
     img.style.height = img.style.width;
-    const x = Math.random() * window.innerWidth;
-    const y = Math.random() * window.innerHeight;
+    const x = Math.random() * getLayoutWidth();
+    const y = Math.random() * 810;
     img.style.left = x + "px";
     img.style.top = y + "px";
-    document.body.appendChild(img);
+    document.getElementById("game-root").appendChild(img);
     emojis.push({
       el: img,
       x, y,
@@ -49,12 +50,12 @@ export async function startWinSequence() {
   const textEl = document.createElement("div");
   textEl.className = "escape-text";
   textEl.textContent = "THE EMOJIS HAVE ESCAPED!";
-  document.body.appendChild(textEl);
+  document.getElementById("game-root").appendChild(textEl);
 
   let animId;
   function bounceLoop() {
-    const w = window.innerWidth;
-    const h = window.innerHeight;
+    const w = getLayoutWidth();
+    const h = 810;
     for (const e of emojis) {
       e.x += e.vx;
       e.y += e.vy;
@@ -79,11 +80,11 @@ export async function startWinSequence() {
     const c = document.createElement("div");
     c.className = "confetti";
     c.style.background = colors[Math.floor(Math.random() * colors.length)];
-    c.style.left = Math.random() * window.innerWidth + "px";
+    c.style.left = Math.random() * getLayoutWidth() + "px";
     c.style.top = -10 + "px";
     c.style.width = (4 + Math.random() * 8) + "px";
     c.style.height = (4 + Math.random() * 8) + "px";
-    document.body.appendChild(c);
+    document.getElementById("game-root").appendChild(c);
     confettiEls.push({ el: c, x: parseFloat(c.style.left), y: -10, vy: 1 + Math.random() * 3, vx: (Math.random() - 0.5) * 2 });
   }
 
@@ -94,7 +95,7 @@ export async function startWinSequence() {
       c.x += c.vx;
       c.el.style.top = c.y + "px";
       c.el.style.left = c.x + "px";
-      if (c.y > window.innerHeight) { c.y = -10; c.x = Math.random() * window.innerWidth; }
+      if (c.y > 810) { c.y = -10; c.x = Math.random() * getLayoutWidth(); }
     }
     confId = requestAnimationFrame(confettiLoop);
   }
@@ -127,7 +128,7 @@ All emojis have been freed. The virtual desktop is no longer viable.
 *  You have been a wonderful caretaker.        *
 
 <span class="bsod-cursor"></span></pre>`;
-  document.body.appendChild(bsod);
+  document.getElementById("game-root").appendChild(bsod);
 
   // Click or key → reset
   function onDismiss() {
@@ -151,7 +152,7 @@ All emojis have been freed. The virtual desktop is no longer viable.
         <p style="margin:0 0 12px;font-size:13px;">You won Emoji98!<br>Thanks for playing.</p>
         <button id="win-ok-btn" style="min-width:60px;">OK</button>
       </div>`;
-    document.body.appendChild(dialog);
+    document.getElementById("game-root").appendChild(dialog);
     dialog.querySelector("#win-ok-btn").addEventListener("click", () => {
       dialog.remove();
       location.reload();

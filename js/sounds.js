@@ -176,6 +176,11 @@ export function playHarvest() {
   setTimeout(() => tone(523, 0.1, "sine", 0.3), 100);
 }
 
+// Tractor sounds
+export function playTractorTick() {
+  tone(220, 0.04, "square", 0.15);
+}
+
 // Factory sounds
 export function playFactoryMatch() {
   sweep(400, 700, 0.1, "sine", 0.25);

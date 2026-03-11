@@ -3,6 +3,7 @@
 import { createWindow, closeWindow } from "./index.js";
 import { recycleBin, onRecycleBinChange, offRecycleBinChange } from "./index.js";
 import { playMenuOpen, playMenuClose, playClick, playShutdown } from "./sounds.js";
+import { getLayoutWidth } from "./scaling.js";
 
 export function initDesktopIcons(launchApp) {
   const icons = document.querySelectorAll(".desktop-icon");
@@ -95,7 +96,7 @@ export function launchMyComputer() {
 
 function renderRecycleBinList(container) {
   if (recycleBin.length === 0) {
-    container.innerHTML = "<p>Recycle Bin is empty.</p>";
+    container.innerHTML = "<p>Shredder is empty.</p>";
     return;
   }
   container.innerHTML = "";
@@ -116,7 +117,7 @@ export function launchRecycleBin() {
 
   const listener = onRecycleBinChange(() => renderRecycleBinList(body));
 
-  const entry = createWindow("recycle-bin", "Recycle Bin", body, {
+  const entry = createWindow("recycle-bin", "Shredder", body, {
     width: 320,
     height: 260,
     icon: "icons/recycle-bin.svg",
@@ -137,8 +138,8 @@ function launchShutdown() {
   createWindow("shutdown", "Shut Down", body, {
     width: 340,
     height: 200,
-    x: (window.innerWidth - 340) / 2,
-    y: (window.innerHeight - 230) / 2,
+    x: (getLayoutWidth() - 340) / 2,
+    y: (810 - 230) / 2,
     icon: "icons/shutdown.svg",
   });
 }

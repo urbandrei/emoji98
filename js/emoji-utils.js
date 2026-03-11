@@ -20,10 +20,22 @@ const PET_CODEPOINTS = [
   "274c",  // cross mark (factory miss)
   "2705",  // check mark (factory collect)
   "1f480", // skull (dead pet)
+  "1f4b0", // money bag (coin upgrades)
+  "1f4cb", // clipboard (pet roster)
+  "1f916", // robot (roomba)
+  "1f922", // sick face
+  "1f62c", // scared face
+  "1f4a9", // poop
+  "2764",  // heart
 ];
 
 const PIXEL_RES = 14;
 const pixelCache = {};
+const spriteCache = {};
+
+export function getSpriteImage(codepoint) {
+  return spriteCache[codepoint] || null;
+}
 
 function quantizeColor(r, g, b) {
   r = Math.round(r / 85) * 85;
@@ -71,6 +83,9 @@ export function pixelateEmoji(codepoint) {
       ctx.putImageData(imageData, 0, 0);
       const dataUrl = canvas.toDataURL("image/png");
       pixelCache[codepoint] = dataUrl;
+      const spriteImg = new Image();
+      spriteImg.src = dataUrl;
+      spriteCache[codepoint] = spriteImg;
       resolve(dataUrl);
     };
     img.onerror = function () {

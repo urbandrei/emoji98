@@ -1,10 +1,10 @@
 // ========== Barrel Exports ==========
 
 // Emoji utilities
-export { pixelateEmoji, preloadEmojis, pixelateWallpaper } from "./emoji-utils.js";
+export { pixelateEmoji, preloadEmojis, pixelateWallpaper, getSpriteImage } from "./emoji-utils.js";
 
 // Inventory
-export { inventory, addInventory, useInventory, onInventoryChange, offInventoryChange } from "./inventory.js";
+export { inventory, addInventory, useInventory, addCoin, spendCoin, onInventoryChange, offInventoryChange } from "./inventory.js";
 export { recycleBin, addToRecycleBin, onRecycleBinChange, offRecycleBinChange } from "./inventory.js";
 
 // Window manager

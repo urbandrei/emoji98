@@ -1,15 +1,11 @@
-Prep tasks: split script.js into individual .js script files, organized in files.
+Windows I want to add:
+- stat app (get by upgrade + tutorial) should show overall mood, number of emojis dead (breakdown of causes), number of needs met, amount of each resource generated, etc.
+- achievement app (get by upgrade + tutorial)
+- prestige app, where you can sacrifice all in game progress for coin multiplier next time around (based on how much was sacrificed). Future prestiges additivelt increase the total prestige amount (this should be show clearly on the window) This should unlock after first 1000 coins, and the first time should show tutorial.
 
-1. I want the toy minigame to use emojis, and for the mechanic to be you select a certain type, like soccer ball, and any soccer balls that pass the left side are automatically collected. The longer you go without changing, the fewer of that toy are made, until it is a minimal amount
-2. I want the farm minigame to automatically progress the stage of the plants, and plant new plants randomly, just much slower than you could do by hand.
-3. The water minigame should have left and right buttons below the game for moving the bucket, and the bucket should move smoothly. Water should also be more sporadic right now.
-4. Every emoji should have a randomly generated name, and if you open the trash can when throwing them away, you should see "john_smith.emoji" as a thrown away file.
-5. Emoji should also randomly poop every now and then (poop emoji), and if they are around poop too long, they should get sick and throw up, and if they are sick for too long they will die. Poop can be thrown away as well.
-6. When throwing away poop and peoply, you should see the poop and emojis being dragged below the mouse.
-7. Clicking on emoji should make them have a text box with a heart in it.
-8. Change the hills image with a close, CC0 replacement. Change microsoft specific things (like the ms logo and 98) to macrohard 2026, with a logo being 4 arrows pointing outwards in different shades of pink.
-9. I want to add sounds to the game, I want classic sounds of microsoft 98 and microsoft xp, as well as old, retro video game sounding sounds for the emojis.
-10. I want to add a clippy-like helper to the game. I was thinking nubby the eraser. Can you use a cc0 image for an eraser with eyes, and have it give advice.
-11. When first starting the game, there should be a windows 98 like boot up screen with a dial up modem sound.
-12. If the game is left idle for too long, have a pipes screensaver.
-13. Add a settings app, where you can change game settings.
+New behaviour I want to add:
+- Doctor pets that heal the sick, improve lifespan of emoji they are around, doctor emoji, should be unlocked with upgrade, have correlated upgrades improving ability, spawn rate
+- Special emojis that spawn in the emoji pet game rarely (more like emoji skins)
+- Special event emojis that fly across the screen and increase some stat if clicked (x10 output of a minigame or shredder for short span of time, coin emojis spawn across screen, giving 5% of total coin amount per click, etc.) Similar to cookie clicker golden cookies.
+
+Add pipes screen saver + blue screen true ending.

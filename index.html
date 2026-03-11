@@ -2,20 +2,21 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
   <title>Macrohard 2026</title>
   <link rel="stylesheet" href="https://unpkg.com/98.css" />
   <link rel="stylesheet" href="style.css" />
 </head>
 <body>
+  <div id="game-root">
   <div id="desktop">
     <div class="desktop-icon" data-app="my-computer" tabindex="0">
       <img src="icons/my-computer.svg" alt="My Computer" draggable="false" />
       <span>My Computer</span>
     </div>
     <div class="desktop-icon" data-app="recycle-bin" tabindex="0">
-      <img src="icons/recycle-bin.svg" alt="Recycle Bin" draggable="false" />
-      <span>Recycle Bin</span>
+      <img src="icons/recycle-bin.svg" alt="Shredder" draggable="false" />
+      <span>Shredder</span>
     </div>
     <div class="desktop-icon" data-app="emoji-game" tabindex="0">
       <img src="icons/emoji-game.svg" alt="Emoji Game" draggable="false" />
@@ -36,6 +37,10 @@
     <div class="desktop-icon" data-app="upgrade-shop" tabindex="0">
       <img src="icons/upgrade-shop.svg" alt="Upgrade Shop" draggable="false" />
       <span>Upgrade Shop</span>
+    </div>
+    <div class="desktop-icon" data-app="pet-roster" tabindex="0">
+      <img src="" alt="Pet Roster" draggable="false" />
+      <span>Pet Roster</span>
     </div>
   </div>
 
@@ -65,6 +70,10 @@
           <img src="icons/upgrade-shop.svg" alt="" />
           Upgrade Shop
         </li>
+        <li data-app="pet-roster">
+          <img src="" alt="" />
+          Pet Roster
+        </li>
         <li data-app="my-computer">
           <img src="icons/my-computer.svg" alt="" />
           My Computer
@@ -89,6 +98,7 @@
       <span id="clock"></span>
     </div>
   </div>
+  </div><!-- #game-root -->
 
   <script type="module" src="js/main.js"></script>
 </body>

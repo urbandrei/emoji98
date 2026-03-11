@@ -1,0 +1,5 @@
+Too many pets! They'll die if the window stays this small!
+
+Buy the Window Resize upgrade, then drag the window edges to make more room!
+
+If you see 😬 emoji, the window is too small!
